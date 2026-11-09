@@ -19,9 +19,13 @@ Bitácora del proyecto. Se actualiza al cerrar cada tarea.
 - **No probado todavía contra Supabase real** ni en un celular de verdad (Compartir por WhatsApp).
 - Pendiente de diseño: revisión final de impeccable y DESIGN.md.
 
+## Publicación
+- Repo público: https://github.com/MauricioZarate0/administrador-proyectos (rama `main`).
+- GitHub Pages activo desde `main` / raíz: https://mauriciozarate0.github.io/administrador-proyectos/
+- `logo-animado/` es una carpeta aparte del dueño: quedó fuera del repo (.gitignore) hasta que confirme si va.
+
 ## Pendiente del dueño (manual)
-- Crear proyecto Supabase, correr `supabase/schema.sql`, crear su usuario, desactivar registros, completar `config.js`.
-- Subir a GitHub y activar Pages.
+- Crear proyecto Supabase, correr `supabase/schema.sql`, crear su usuario, desactivar registros, completar `config.js` y pushear.
 
 ## Problemas conocidos
 - Supabase gratis pausa tras 7 días sin uso (se restaura a mano).
