@@ -1,5 +1,5 @@
 // Cachea solo la interfaz (los datos siempre vienen de Supabase). Subir CACHE al cambiar archivos.
-const CACHE = 'proyectos-v1';
+const CACHE = 'proyectos-v2';
 const SHELL = ['./', 'index.html', 'app.js', 'logic.js', 'config.js', 'styles.css', 'manifest.webmanifest', 'icon.svg', 'icon-512.png'];
 
 self.addEventListener('install', (e) => e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())));
@@ -12,7 +12,8 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   e.respondWith(
-    fetch(e.request).then((res) => {
+    // no-cache: GitHub Pages manda max-age=600 y sin esto los cambios tardan 10 min en llegar
+    fetch(e.request, { cache: 'no-cache' }).then((res) => {
       const copy = res.clone();
       caches.open(CACHE).then((c) => c.put(e.request, copy));
       return res;
