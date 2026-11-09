@@ -1,0 +1,531 @@
+import { createClient } from 'supabase';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
+import * as L from './logic.js';
+
+const view = document.getElementById('view');
+const topBar = document.querySelector('.top');
+const S = { user: null, settings: null, projects: [], payments: [], filter: { project: '', month: '' } };
+const pdfCache = new Map(); // payment id -> Blob, para que "Compartir" no espere la red
+
+const STATUS = { activo: 'Activo', desarrollo: 'En desarrollo', pausado: 'Pausado', finalizado: 'Finalizado' };
+const KIND = { web: 'Web', app: 'App', otro: 'Otro' };
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const cap = (s) => s[0].toUpperCase() + s.slice(1);
+const q = async (p) => { const { data, error } = await p; if (error) throw error; return data; };
+const byId = (id) => S.projects.find((p) => p.id === Number(id));
+const payById = (id) => S.payments.find((p) => p.id === Number(id));
+
+let toastTimer;
+function toast(msg, bad = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = bad ? 'show bad' : 'show';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (t.className = ''), 3500);
+}
+
+function errorText(e) {
+  if (e?.code === '23503') return 'Este proyecto tiene recibos y no se puede borrar. Marcalo como Finalizado.';
+  if (/Invalid login/i.test(e?.message)) return 'Email o contraseña incorrectos.';
+  if (/fetch/i.test(e?.message)) return 'Sin conexión con el servidor. Revisá tu internet y probá de nuevo.';
+  return e?.message || 'Algo salió mal. Probá de nuevo.';
+}
+
+// ---------- Arranque ----------
+
+let sb;
+if (SUPABASE_URL.includes('TU-PROYECTO')) {
+  view.innerHTML = `<div class="auth"><h1>Falta configurar</h1><p class="muted">Completá <code>config.js</code> con la URL y la clave de tu proyecto de Supabase. Los pasos están en el README.</p></div>`;
+} else {
+  sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  sb.auth.onAuthStateChange((_event, session) => {
+    const user = session?.user ?? null;
+    if (user?.id === S.user?.id && S.settings) return;
+    S.user = user;
+    // fuera del callback: supabase-js se traba si se lo llama adentro
+    setTimeout(() => (user ? load().catch((e) => toast(errorText(e), true)) : renderLogin()));
+  });
+  window.addEventListener('hashchange', route);
+}
+
+async function load() {
+  // shortcut: trae todo de una (Supabase corta en 1000 filas); paginar los pagos si se pasa de ~900 recibos.
+  const [settings, projects, payments] = await Promise.all([
+    q(sb.from('settings').select('*').maybeSingle()),
+    q(sb.from('projects').select('*').order('name')),
+    q(sb.from('payments').select('*').order('receipt_no', { ascending: false })),
+  ]);
+  S.settings = settings ?? (await q(sb.from('settings').insert({}).select().single()));
+  S.projects = projects;
+  S.payments = payments;
+  topBar.hidden = false;
+  route();
+}
+
+function renderLogin() {
+  topBar.hidden = true;
+  view.innerHTML = `
+    <form class="auth" data-form="login">
+      <h1>Proyectos</h1>
+      <p class="muted">Ingresá con tu cuenta.</p>
+      <label>Email<input name="email" type="email" autocomplete="email" required></label>
+      <label>Contraseña<input name="password" type="password" autocomplete="current-password" required></label>
+      <button class="btn primary">Ingresar</button>
+    </form>`;
+}
+
+// ---------- Rutas ----------
+
+const TAB = { proyecto: 'proyectos', nuevo: 'proyectos', editar: 'proyectos', pago: 'proyectos', recibo: 'recibos' };
+const routes = { panel, proyectos, proyecto, nuevo: () => projectForm(), editar: (id) => projectForm(byId(id)), pago: payForm, recibos, recibo, ajustes };
+
+function route() {
+  if (!S.user || !S.settings) return;
+  const [name, id] = location.hash.slice(2).split('/');
+  const fn = routes[name] ?? panel;
+  const tab = TAB[name] ?? (routes[name] ? name : 'panel');
+  document.querySelectorAll('[data-tab]').forEach((a) => a.toggleAttribute('aria-current', a.dataset.tab === tab));
+  view.innerHTML = fn(id);
+  window.scrollTo(0, 0);
+  if (name === 'recibo') prefetchPdf(payById(id));
+}
+
+// ---------- Piezas ----------
+
+const badge = (cls, text) => `<span class="badge ${cls}">${esc(text)}</span>`;
+const chargeBadge = (s) => s === 'vencido' ? badge('bad', 'Vencido') : s === 'cobrado' ? badge('ok', 'Cobrado') : badge('warn', 'Pendiente');
+const statusBadge = (s) => badge(s === 'activo' ? 'ok' : s === 'desarrollo' ? 'info' : 'neutral', STATUS[s]);
+const dueText = (p, s, today) => {
+  if (!p.due_day) return 'sin día de cobro';
+  const d = L.dueDate(p.due_day, today).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' });
+  return s === 'vencido' ? `venció el ${d}` : `vence el ${d}`;
+};
+const leftText = (n) => n === 0 ? 'hoy' : n > 0 ? `en ${n} día${n > 1 ? 's' : ''}` : `venció hace ${-n} día${n < -1 ? 's' : ''}`;
+const empty = (title, text, action = '') => `<div class="empty"><p class="empty-title">${title}</p><p class="muted">${text}</p>${action}</div>`;
+
+function receiptRow(x) {
+  const p = byId(x.project_id);
+  return `<li><a class="row" href="#/recibo/${x.id}">
+    <span class="num">${L.receiptLabel(x.receipt_no)}</span>
+    <span class="row-main"><span class="title">${esc(p?.name ?? 'Proyecto borrado')}</span><span class="sub">${esc(L.periodLabel(x.period))} · ${esc(L.dateLabel(x.paid_on))}</span></span>
+    <span class="amount">${L.money(x.amount, x.currency)}</span>
+    ${x.pdf_path ? '' : badge('warn', 'Sin PDF')}
+  </a></li>`;
+}
+
+// ---------- Vistas ----------
+
+function panel() {
+  const today = new Date();
+  const charges = S.projects
+    .map((p) => ({ p, s: L.chargeStatus(p, S.payments, today) }))
+    .filter((x) => x.s === 'pendiente' || x.s === 'vencido')
+    .sort((a, b) => (a.s === 'vencido' ? -1 : 0) - (b.s === 'vencido' ? -1 : 0) || (a.p.due_day ?? 99) - (b.p.due_day ?? 99));
+  const ren = L.renewals(S.projects, today);
+  const totals = Object.entries(L.monthTotals(S.projects, S.payments, today));
+
+  if (!S.projects.length) {
+    return `<h1>Panel</h1>${empty('Todavía no cargaste proyectos', 'Cargá tus webs y apps con su cuota y fechas, y acá vas a ver qué cobrar y qué renovar cada mes.', '<a class="btn primary" href="#/nuevo">Nuevo proyecto</a>')}`;
+  }
+  return `
+    <div class="head"><h1>${cap(L.periodLabel(L.period(today)))}</h1></div>
+    ${S.settings.name ? '' : `<p class="notice">Completá tus datos en <a href="#/ajustes">Ajustes</a> para que salgan en los recibos.</p>`}
+    ${totals.length ? `<dl class="totals">${totals.map(([c, t]) => `
+      <div><dt>${c} cobrado</dt><dd>${L.money(t.cobrado, c)}</dd></div>
+      <div><dt>${c} pendiente</dt><dd class="${t.pendiente ? 'pending' : ''}">${L.money(t.pendiente, c)}</dd></div>`).join('')}</dl>` : ''}
+
+    <section>
+      <h2>Para cobrar</h2>
+      ${charges.length ? `<ul class="list">${charges.map(({ p, s }) => `
+        <li class="row">
+          <a class="row-main" href="#/proyecto/${p.id}"><span class="title">${esc(p.name)}</span><span class="sub">${esc(p.client || KIND[p.kind])} · ${dueText(p, s, today)}</span></a>
+          <span class="amount">${L.money(p.fee, p.currency)}</span>
+          ${chargeBadge(s)}
+          <a class="btn sm" href="#/pago/${p.id}">Registrar pago</a>
+        </li>`).join('')}</ul>` : `<p class="muted calm">Todo cobrado este mes.</p>`}
+    </section>
+
+    <section>
+      <h2>Renovaciones próximas</h2>
+      ${ren.length ? `<ul class="list">${ren.map((r) => `
+        <li><a class="row" href="#/proyecto/${r.project.id}">
+          <span class="row-main"><span class="title">${r.label} · ${esc(r.project.name)}</span><span class="sub">${esc(L.dateLabel(r.date))}</span></span>
+          ${badge(r.left < 0 ? 'bad' : r.left <= 7 ? 'warn' : 'neutral', cap(leftText(r.left)))}
+        </a></li>`).join('')}</ul>` : `<p class="muted calm">Nada vence en los próximos 30 días.</p>`}
+    </section>`;
+}
+
+function proyectos() {
+  const order = Object.keys(STATUS);
+  const list = [...S.projects].sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status) || a.name.localeCompare(b.name, 'es'));
+  const today = new Date();
+  return `
+    <div class="head"><h1>Proyectos</h1><a class="btn primary" href="#/nuevo">Nuevo proyecto</a></div>
+    ${list.length ? `<ul class="list">${list.map((p) => {
+      const s = L.chargeStatus(p, S.payments, today);
+      return `<li><a class="row" href="#/proyecto/${p.id}">
+        <span class="row-main"><span class="title">${esc(p.name)}</span><span class="sub">${KIND[p.kind]}${p.client ? ' · ' + esc(p.client) : ''}</span></span>
+        <span class="amount">${p.fee > 0 ? L.money(p.fee, p.currency) + '<small>/mes</small>' : ''}</span>
+        ${s ? chargeBadge(s) : ''}${statusBadge(p.status)}
+      </a></li>`;
+    }).join('')}</ul>` : empty('Sin proyectos', 'Empezá cargando el primero.')}`;
+}
+
+function proyecto(id) {
+  const p = byId(id);
+  if (!p) return empty('No encontramos ese proyecto', 'Puede que se haya borrado.', '<a class="btn" href="#/proyectos">Ver proyectos</a>');
+  const pays = S.payments.filter((x) => x.project_id === p.id);
+  const safeUrl = /^https?:\/\//i.test(p.url) ? p.url : '';
+  const row = (k, v) => v ? `<div><dt>${k}</dt><dd>${v}</dd></div>` : '';
+  return `
+    <a class="back" href="#/proyectos">Proyectos</a>
+    <div class="head">
+      <h1>${esc(p.name)} ${statusBadge(p.status)}</h1>
+      <div class="actions"><a class="btn" href="#/editar/${p.id}">Editar</a><a class="btn primary" href="#/pago/${p.id}">Registrar pago</a></div>
+    </div>
+    <dl class="details">
+      ${row('Tipo', KIND[p.kind])}
+      ${row('Cliente', esc(p.client))}
+      ${row('Contacto', esc(p.contact))}
+      ${row('Sitio', safeUrl ? `<a href="${esc(safeUrl)}" target="_blank" rel="noopener">${esc(safeUrl.replace(/^https?:\/\//, ''))}</a>` : esc(p.url))}
+      ${row('Cuota mensual', p.fee > 0 ? L.money(p.fee, p.currency) : '')}
+      ${row('Día de cobro', p.due_day ? `Día ${p.due_day}` : '')}
+      ${row('Inicio', p.start_date && esc(L.dateLabel(p.start_date)))}
+      ${row('Renovación dominio', p.domain_renewal && esc(L.dateLabel(p.domain_renewal)))}
+      ${row('Renovación hosting', p.hosting_renewal && esc(L.dateLabel(p.hosting_renewal)))}
+    </dl>
+    ${p.notes ? `<section><h2>Notas</h2><p class="notes">${esc(p.notes)}</p></section>` : ''}
+    <section>
+      <h2>Pagos</h2>
+      ${pays.length ? `<ul class="list">${pays.map(receiptRow).join('')}</ul>` : `<p class="muted calm">Todavía no hay pagos registrados.</p>`}
+    </section>`;
+}
+
+function projectForm(p) {
+  const v = p ?? { kind: 'web', status: 'activo', currency: 'ARS' };
+  const opt = (map, cur) => Object.entries(map).map(([k, t]) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${t}</option>`).join('');
+  const f = (name, label, type = 'text', extra = '') => `<label>${label}<input name="${name}" type="${type}" value="${esc(v[name])}" ${extra}></label>`;
+  return `
+    <a class="back" href="${p ? `#/proyecto/${p.id}` : '#/proyectos'}">${p ? esc(p.name) : 'Proyectos'}</a>
+    <h1>${p ? 'Editar proyecto' : 'Nuevo proyecto'}</h1>
+    <form class="form" data-form="project" data-id="${p?.id ?? ''}">
+      <fieldset><legend>Proyecto</legend>
+        ${f('name', 'Nombre', 'text', 'required autofocus')}
+        <label>Tipo<select name="kind">${opt(KIND, v.kind)}</select></label>
+        <label>Estado<select name="status">${opt(STATUS, v.status)}</select></label>
+        ${f('url', 'Sitio o link', 'url', 'placeholder="https://"')}
+      </fieldset>
+      <fieldset><legend>Cliente</legend>
+        ${f('client', 'Cliente')}
+        ${f('contact', 'Contacto', 'text', 'placeholder="Teléfono o email"')}
+      </fieldset>
+      <fieldset><legend>Cobro</legend>
+        ${f('fee', 'Cuota mensual', 'number', 'min="0" step="0.01" inputmode="decimal"')}
+        <label>Moneda<select name="currency">${opt({ ARS: 'Pesos (ARS)', USD: 'Dólares (USD)' }, v.currency)}</select></label>
+        ${f('due_day', 'Día de cobro', 'number', 'min="1" max="31" inputmode="numeric" placeholder="1 a 31"')}
+      </fieldset>
+      <fieldset><legend>Fechas</legend>
+        ${f('start_date', 'Inicio', 'date')}
+        ${f('domain_renewal', 'Renovación del dominio', 'date')}
+        ${f('hosting_renewal', 'Renovación del hosting', 'date')}
+      </fieldset>
+      <label class="wide">Notas<textarea name="notes" rows="4">${esc(v.notes)}</textarea></label>
+      <div class="form-actions">
+        <button class="btn primary">Guardar</button>
+        ${p ? `<button type="button" class="btn danger" data-act="delete-project" data-id="${p.id}">Borrar proyecto</button>` : ''}
+      </div>
+    </form>`;
+}
+
+function payForm(id) {
+  const p = byId(id);
+  if (!p) return empty('No encontramos ese proyecto', '', '<a class="btn" href="#/proyectos">Ver proyectos</a>');
+  const today = new Date();
+  return `
+    <a class="back" href="#/proyecto/${p.id}">${esc(p.name)}</a>
+    <h1>Registrar pago</h1>
+    <p class="muted">${esc(p.client || p.name)} · se genera el recibo ${L.receiptLabel(S.settings.next_receipt)}</p>
+    <form class="form narrow" data-form="payment" data-id="${p.id}">
+      <label>Importe<input name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" value="${p.fee > 0 ? p.fee : ''}" required autofocus></label>
+      <label>Moneda<select name="currency"><option ${p.currency === 'ARS' ? 'selected' : ''}>ARS</option><option ${p.currency === 'USD' ? 'selected' : ''}>USD</option></select></label>
+      <label>Mes que paga<input name="period" type="month" value="${L.period(today)}" required></label>
+      <label>Fecha de pago<input name="paid_on" type="date" value="${L.isoDate(today)}" required></label>
+      <label class="wide">Nota en el recibo<input name="note" type="text" placeholder="Opcional, ej.: transferencia"></label>
+      <div class="form-actions"><button class="btn primary">Registrar y generar recibo</button></div>
+    </form>`;
+}
+
+function recibos() {
+  const { project, month } = S.filter;
+  const list = S.payments.filter((x) => (!project || x.project_id === Number(project)) && (!month || x.period === month));
+  const opts = [...S.projects].sort((a, b) => a.name.localeCompare(b.name, 'es'))
+    .map((p) => `<option value="${p.id}" ${String(p.id) === project ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
+  return `
+    <div class="head"><h1>Recibos</h1></div>
+    <div class="filters">
+      <label>Proyecto<select data-filter="project"><option value="">Todos</option>${opts}</select></label>
+      <label>Mes<input type="month" data-filter="month" value="${month}"></label>
+      ${project || month ? '<button class="btn ghost" data-act="clear-filter">Limpiar</button>' : ''}
+    </div>
+    ${list.length ? `<ul class="list">${list.map(receiptRow).join('')}</ul>`
+      : S.payments.length ? empty('Ningún recibo coincide', 'Probá con otro proyecto o mes.') : empty('Todavía no hay recibos', 'Se crean al registrar un pago desde un proyecto.')}`;
+}
+
+function recibo(id) {
+  const x = payById(id);
+  if (!x) return empty('No encontramos ese recibo', '', '<a class="btn" href="#/recibos">Ver recibos</a>');
+  const p = byId(x.project_id);
+  return `
+    <a class="back" href="#/recibos">Recibos</a>
+    <div class="head"><h1>Recibo ${L.receiptLabel(x.receipt_no)}</h1></div>
+    <dl class="details">
+      <div><dt>Proyecto</dt><dd><a href="#/proyecto/${p?.id}">${esc(p?.name ?? '—')}</a></dd></div>
+      <div><dt>Cliente</dt><dd>${esc(p?.client || '—')}</dd></div>
+      <div><dt>Importe</dt><dd class="big">${L.money(x.amount, x.currency)}</dd></div>
+      <div><dt>Mes</dt><dd>${esc(cap(L.periodLabel(x.period)))}</dd></div>
+      <div><dt>Fecha de pago</dt><dd>${esc(L.dateLabel(x.paid_on))}</dd></div>
+      ${x.note ? `<div><dt>Nota</dt><dd>${esc(x.note)}</dd></div>` : ''}
+    </dl>
+    <div class="actions">
+      ${x.pdf_path
+        ? `<button class="btn primary" data-act="share" data-id="${x.id}">Compartir</button><button class="btn" data-act="open" data-id="${x.id}">Ver PDF</button>`
+        : `<p class="notice">El pago quedó registrado pero el PDF no se pudo guardar.</p><button class="btn primary" data-act="make-pdf" data-id="${x.id}">Generar PDF</button>`}
+    </div>`;
+}
+
+function ajustes() {
+  const s = S.settings;
+  const f = (name, label, type = 'text', extra = '') => `<label>${label}<input name="${name}" type="${type}" value="${esc(s[name])}" ${extra}></label>`;
+  return `
+    <h1>Ajustes</h1>
+    <form class="form" data-form="settings">
+      <fieldset><legend>Tus datos en los recibos</legend>
+        ${f('name', 'Nombre o razón social', 'text', 'autocomplete="name"')}
+        ${f('tax_id', 'CUIT / DNI')}
+        ${f('address', 'Dirección', 'text', 'autocomplete="street-address"')}
+        ${f('email', 'Email', 'email', 'autocomplete="email"')}
+        ${f('phone', 'Teléfono', 'tel', 'autocomplete="tel"')}
+      </fieldset>
+      <fieldset><legend>Recibos</legend>
+        ${f('next_receipt', 'Próximo número de recibo', 'number', 'min="1" step="1" required')}
+        <label>Logo (PNG o JPG)<input name="logo" type="file" accept="image/png,image/jpeg"></label>
+        ${s.logo_path ? `<p class="muted small">Ya tenés un logo cargado. <button type="button" class="link" data-act="remove-logo">Quitarlo</button></p>` : ''}
+      </fieldset>
+      <div class="form-actions"><button class="btn primary">Guardar</button></div>
+    </form>
+    <section class="account">
+      <h2>Cuenta</h2>
+      <p class="muted">${esc(S.user.email)}</p>
+      <button class="btn" data-act="logout">Cerrar sesión</button>
+    </section>`;
+}
+
+// ---------- Acciones ----------
+
+const toNull = (v) => (v === '' ? null : v);
+
+const submit = {
+  async login(fd) {
+    await q(sb.auth.signInWithPassword({ email: fd.get('email'), password: fd.get('password') }));
+  },
+
+  async project(fd, form) {
+    const row = Object.fromEntries(fd);
+    Object.assign(row, {
+      name: row.name.trim(),
+      fee: Number(row.fee || 0),
+      due_day: row.due_day ? Number(row.due_day) : null,
+      start_date: toNull(row.start_date), domain_renewal: toNull(row.domain_renewal), hosting_renewal: toNull(row.hosting_renewal),
+    });
+    const id = Number(form.dataset.id);
+    const saved = id
+      ? await q(sb.from('projects').update(row).eq('id', id).select().single())
+      : await q(sb.from('projects').insert(row).select().single());
+    S.projects = [...S.projects.filter((p) => p.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    toast('Proyecto guardado');
+    location.hash = `#/proyecto/${saved.id}`;
+  },
+
+  async payment(fd, form) {
+    const pay = await q(sb.rpc('register_payment', {
+      p_project: Number(form.dataset.id),
+      p_paid_on: fd.get('paid_on'), p_period: fd.get('period'),
+      p_amount: Number(fd.get('amount')), p_currency: fd.get('currency'), p_note: fd.get('note').trim(),
+    }));
+    S.payments.unshift(pay);
+    S.settings.next_receipt = pay.receipt_no + 1;
+    await savePdf(pay).catch((e) => toast('Pago registrado, pero falló el PDF: ' + errorText(e), true));
+    location.hash = `#/recibo/${pay.id}`;
+  },
+
+  async settings(fd) {
+    const row = Object.fromEntries(['name', 'tax_id', 'address', 'email', 'phone'].map((k) => [k, fd.get(k).trim()]));
+    row.next_receipt = Number(fd.get('next_receipt'));
+    const logo = fd.get('logo');
+    if (logo?.size) {
+      if (logo.size > 2e6) throw new Error('El logo pesa más de 2 MB. Usá uno más liviano.');
+      row.logo_path = `${S.user.id}/logo`;
+      await q(sb.storage.from('recibos').upload(row.logo_path, logo, { upsert: true, contentType: logo.type }));
+      logoCache = null;
+    }
+    S.settings = await q(sb.from('settings').update(row).eq('user_id', S.user.id).select().single());
+    toast('Ajustes guardados');
+    route();
+  },
+};
+
+const actions = {
+  async 'delete-project'(el) {
+    const p = byId(el.dataset.id);
+    if (!confirm(`¿Borrar "${p.name}"? No se puede deshacer.`)) return;
+    await q(sb.from('projects').delete().eq('id', p.id));
+    S.projects = S.projects.filter((x) => x.id !== p.id);
+    toast('Proyecto borrado');
+    location.hash = '#/proyectos';
+  },
+  async share(el) {
+    const x = payById(el.dataset.id);
+    const file = new File([await pdfBlob(x)], `${L.receiptLabel(x.receipt_no)}.pdf`, { type: 'application/pdf' });
+    if (navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], title: `Recibo ${L.receiptLabel(x.receipt_no)}` }).catch((e) => { if (e.name !== 'AbortError') throw e; });
+    } else {
+      const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(file), download: file.name });
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1e4);
+    }
+  },
+  async open(el) {
+    const w = window.open('', '_blank'); // abrir antes de esperar, si no el navegador lo bloquea
+    const url = URL.createObjectURL(await pdfBlob(payById(el.dataset.id)));
+    w ? (w.location = url) : (location.href = url);
+  },
+  async 'make-pdf'(el) {
+    await savePdf(payById(el.dataset.id));
+    toast('PDF generado');
+    route();
+  },
+  async 'remove-logo'() {
+    await q(sb.storage.from('recibos').remove([S.settings.logo_path]));
+    S.settings = await q(sb.from('settings').update({ logo_path: null }).eq('user_id', S.user.id).select().single());
+    logoCache = null;
+    route();
+  },
+  'clear-filter'() { S.filter = { project: '', month: '' }; route(); },
+  async logout() {
+    await sb.auth.signOut();
+    Object.assign(S, { settings: null, projects: [], payments: [] });
+    pdfCache.clear();
+    location.hash = '';
+  },
+};
+
+view.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const btn = form.querySelector('.btn.primary');
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Guardando…';
+  try {
+    await submit[form.dataset.form](new FormData(form), form);
+  } catch (err) {
+    toast(errorText(err), true);
+  } finally {
+    if (btn.isConnected) { btn.disabled = false; btn.textContent = label; }
+  }
+});
+
+view.addEventListener('click', async (e) => {
+  const el = e.target.closest('[data-act]');
+  if (!el) return;
+  el.disabled = true;
+  try { await actions[el.dataset.act](el); } catch (err) { toast(errorText(err), true); } finally { el.disabled = false; }
+});
+
+view.addEventListener('change', (e) => {
+  const k = e.target.dataset.filter;
+  if (!k) return;
+  S.filter[k] = e.target.value;
+  route();
+});
+
+// ---------- PDF ----------
+
+async function pdfBlob(x) {
+  if (!pdfCache.has(x.id)) pdfCache.set(x.id, await q(sb.storage.from('recibos').download(x.pdf_path)));
+  return pdfCache.get(x.id);
+}
+const prefetchPdf = (x) => { if (x?.pdf_path) pdfBlob(x).catch(() => {}); };
+
+async function savePdf(x) {
+  const blob = await makePdf(x);
+  const path = L.receiptPath(S.user.id, byId(x.project_id)?.client, x.paid_on, x.receipt_no);
+  await q(sb.storage.from('recibos').upload(path, blob, { upsert: true, contentType: 'application/pdf' }));
+  const saved = await q(sb.from('payments').update({ pdf_path: path }).eq('id', x.id).select().single());
+  Object.assign(x, saved);
+  pdfCache.set(x.id, blob);
+}
+
+let logoCache = null;
+async function logoDataUrl() {
+  if (!S.settings.logo_path) return null;
+  if (!logoCache) {
+    const blob = await q(sb.storage.from('recibos').download(S.settings.logo_path));
+    logoCache = await new Promise((ok, fail) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = fail; r.readAsDataURL(blob); });
+  }
+  return logoCache;
+}
+
+async function makePdf(x) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ format: 'a5', unit: 'mm' });
+  const p = byId(x.project_id) ?? {};
+  const s = S.settings;
+  const W = 148, M = 14, R = W - M;
+  const ink = [24, 26, 31], gray = [104, 110, 122], line = [214, 218, 224];
+  let y = M;
+
+  const logo = await logoDataUrl().catch(() => null);
+  if (logo) {
+    const { width, height } = doc.getImageProperties(logo);
+    const h = 14, w = Math.min(48, (h * width) / height);
+    doc.addImage(logo, M, y, w, (w * height) / width);
+    y += h + 4;
+  }
+  doc.setTextColor(...ink).setFont('helvetica', 'bold').setFontSize(12).text(s.name || ' ', M, y + 4);
+  doc.setFont('helvetica', 'normal').setFontSize(8.5).setTextColor(...gray);
+  [s.tax_id && `CUIT/DNI ${s.tax_id}`, s.address, [s.email, s.phone].filter(Boolean).join(' · ')]
+    .filter(Boolean).forEach((t, i) => doc.text(t, M, y + 9 + i * 4));
+
+  doc.setTextColor(...ink).setFont('helvetica', 'bold').setFontSize(16).text('RECIBO', R, M + 4, { align: 'right' });
+  doc.setFont('helvetica', 'normal').setFontSize(10).text(`N° ${L.receiptLabel(x.receipt_no)}`, R, M + 10, { align: 'right' });
+  doc.setTextColor(...gray).setFontSize(8.5).text(`Fecha: ${L.parseDate(x.paid_on).toLocaleDateString('es-AR')}`, R, M + 15, { align: 'right' });
+
+  y = Math.max(y + 22, 44);
+  doc.setDrawColor(...line).setLineWidth(0.3).line(M, y, R, y);
+  y += 10;
+
+  const body = `Recibí de ${p.client || p.name || '—'} la suma de ${L.money(x.amount, x.currency)} en concepto de ${p.name || 'servicios'} – ${L.periodLabel(x.period)}.`;
+  doc.setTextColor(...ink).setFontSize(11);
+  const lines = doc.splitTextToSize(body, R - M);
+  doc.text(lines, M, y);
+  y += lines.length * 5.5 + 6;
+
+  doc.setFillColor(243, 245, 248).roundedRect(M, y, R - M, 18, 2, 2, 'F');
+  doc.setTextColor(...gray).setFontSize(8.5).text('TOTAL RECIBIDO', M + 5, y + 11);
+  doc.setTextColor(...ink).setFont('helvetica', 'bold').setFontSize(15).text(L.money(x.amount, x.currency), R - 5, y + 12, { align: 'right' });
+  y += 26;
+
+  if (x.note) {
+    doc.setFont('helvetica', 'normal').setFontSize(9).setTextColor(...gray);
+    doc.text(doc.splitTextToSize(`Nota: ${x.note}`, R - M), M, y);
+  }
+
+  const sy = 180;
+  doc.setDrawColor(...gray).line(R - 56, sy, R, sy);
+  doc.setFont('helvetica', 'normal').setFontSize(8.5).setTextColor(...gray).text(s.name || 'Firma', R - 28, sy + 5, { align: 'center' });
+  return doc.output('blob');
+}
+
+// ---------- PWA ----------
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

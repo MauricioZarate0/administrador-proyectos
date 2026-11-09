@@ -1,0 +1,4 @@
+node_modules/
+.claude/settings.local.json
+# carpeta aparte del dueño, no es parte de la app
+logo-animado/
