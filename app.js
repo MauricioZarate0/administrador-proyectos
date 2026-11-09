@@ -8,7 +8,7 @@ const S = { user: null, settings: null, projects: [], payments: [], filter: { pr
 const pdfCache = new Map(); // payment id -> Blob, para que "Compartir" no espere la red
 
 const STATUS = { activo: 'Activo', desarrollo: 'En desarrollo', pausado: 'Pausado', finalizado: 'Finalizado' };
-const KIND = { web: 'Web', app: 'App', otro: 'Otro' };
+const KINDS = ['Web', 'App', 'Landing', 'E-commerce', 'Sistema', 'Otro'];
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const cap = (s) => s[0].toUpperCase() + s.slice(1);
 const q = async (p) => { const { data, error } = await p; if (error) throw error; return data; };
@@ -138,7 +138,7 @@ function panel() {
       <h2>Para cobrar</h2>
       ${charges.length ? `<ul class="list">${charges.map(({ p, s }) => `
         <li class="row">
-          <a class="row-main" href="#/proyecto/${p.id}"><span class="title">${esc(p.name)}</span><span class="sub">${esc(p.client || KIND[p.kind])} · ${dueText(p, s, today)}</span></a>
+          <a class="row-main" href="#/proyecto/${p.id}"><span class="title">${esc(p.name)}</span><span class="sub">${esc(p.client || p.kind)} · ${dueText(p, s, today)}</span></a>
           <span class="amount">${L.money(p.fee, p.currency)}</span>
           ${chargeBadge(s)}
           <a class="btn sm" href="#/pago/${p.id}">Registrar pago</a>
@@ -164,7 +164,7 @@ function proyectos() {
     ${list.length ? `<ul class="list">${list.map((p) => {
       const s = L.chargeStatus(p, S.payments, today);
       return `<li><a class="row" href="#/proyecto/${p.id}">
-        <span class="row-main"><span class="title">${esc(p.name)}</span><span class="sub">${KIND[p.kind]}${p.client ? ' · ' + esc(p.client) : ''}</span></span>
+        <span class="row-main"><span class="title">${esc(p.name)}</span><span class="sub">${esc(p.kind)}${p.client ? ' · ' + esc(p.client) : ''}</span></span>
         <span class="amount">${p.fee > 0 ? L.money(p.fee, p.currency) + '<small>/mes</small>' : ''}</span>
         ${s ? chargeBadge(s) : ''}${statusBadge(p.status)}
       </a></li>`;
@@ -184,7 +184,7 @@ function proyecto(id) {
       <div class="actions"><a class="btn" href="#/editar/${p.id}">Editar</a><a class="btn primary" href="#/pago/${p.id}">Registrar pago</a></div>
     </div>
     <dl class="details">
-      ${row('Tipo', KIND[p.kind])}
+      ${row('Tipo', esc(p.kind))}
       ${row('Cliente', esc(p.client))}
       ${row('Contacto', esc(p.contact))}
       ${row('Sitio', safeUrl ? `<a href="${esc(safeUrl)}" target="_blank" rel="noopener">${esc(safeUrl.replace(/^https?:\/\//, ''))}</a>` : esc(p.url))}
@@ -202,7 +202,7 @@ function proyecto(id) {
 }
 
 function projectForm(p) {
-  const v = p ?? { kind: 'web', status: 'activo', currency: 'ARS' };
+  const v = p ?? { kind: 'Web', status: 'activo', currency: 'ARS' };
   const opt = (map, cur) => Object.entries(map).map(([k, t]) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${t}</option>`).join('');
   const f = (name, label, type = 'text', extra = '') => `<label>${label}<input name="${name}" type="${type}" value="${esc(v[name])}" ${extra}></label>`;
   return `
@@ -211,7 +211,8 @@ function projectForm(p) {
     <form class="form" data-form="project" data-id="${p?.id ?? ''}">
       <fieldset><legend>Proyecto</legend>
         ${f('name', 'Nombre', 'text', 'required autofocus')}
-        <label>Tipo<select name="kind">${opt(KIND, v.kind)}</select></label>
+        ${f('kind', 'Tipo', 'text', 'list="kinds" required maxlength="40" placeholder="Web, App, Landing…"')}
+        <datalist id="kinds">${[...new Set([...KINDS, ...S.projects.map((x) => x.kind)])].map((k) => `<option value="${esc(k)}">`).join('')}</datalist>
         <label>Estado<select name="status">${opt(STATUS, v.status)}</select></label>
         ${f('url', 'Sitio o link', 'url', 'placeholder="https://"')}
       </fieldset>
@@ -313,6 +314,14 @@ function ajustes() {
       </fieldset>
       <div class="form-actions"><button class="btn primary">Guardar</button></div>
     </form>
+    <section>
+      <h2 id="tema">Apariencia</h2>
+      <div class="segmented" role="radiogroup" aria-labelledby="tema">
+        ${[['', 'Automático'], ['light', 'Claro'], ['dark', 'Oscuro']].map(([v, t]) => `
+          <label><input type="radio" name="theme" value="${v}" data-theme-pick ${document.documentElement.dataset.theme === v ? 'checked' : ''}>${t}</label>`).join('')}
+      </div>
+      <p class="muted small">Automático sigue el modo del celular o la PC. Se guarda en este dispositivo.</p>
+    </section>
     <section class="account">
       <h2>Cuenta</h2>
       <p class="muted">${esc(S.user.email)}</p>
@@ -333,6 +342,7 @@ const submit = {
     const row = Object.fromEntries(fd);
     Object.assign(row, {
       name: row.name.trim(),
+      kind: row.kind.trim(),
       fee: Number(row.fee || 0),
       due_day: row.due_day ? Number(row.due_day) : null,
       start_date: toNull(row.start_date), domain_renewal: toNull(row.domain_renewal), hosting_renewal: toNull(row.hosting_renewal),
@@ -443,6 +453,11 @@ view.addEventListener('click', async (e) => {
 });
 
 view.addEventListener('change', (e) => {
+  if (e.target.hasAttribute('data-theme-pick')) {
+    window.applyTheme(e.target.value);
+    try { localStorage.setItem('theme', e.target.value); } catch {}
+    return;
+  }
   const k = e.target.dataset.filter;
   if (!k) return;
   S.filter[k] = e.target.value;

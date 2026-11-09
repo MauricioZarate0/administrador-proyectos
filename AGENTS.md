@@ -20,6 +20,7 @@ python -m http.server 8080
 Abrir http://localhost:8080. Tests de la lógica pura: `node test.mjs`.
 
 ## Reglas
+- Cambios de base: `supabase/schema.sql` siempre refleja el esquema completo (instalación nueva) y cada cambio va además en `supabase/migrations/NNN_nombre.sql` para correr en la base existente.
 - Toda tabla nueva: columna `user_id uuid default auth.uid()` + RLS `user_id = auth.uid()`.
 - Los pagos se crean **solo** con `rpc('register_payment')` (numeración atómica de recibos). No hay policy de insert en `payments`.
 - Los archivos van en `recibos/<user_id>/...` (la policy de Storage lo exige).

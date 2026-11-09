@@ -1,45 +1,27 @@
+/* Tema: automático según el sistema; data-theme="light|dark" lo fuerza (elegido en Ajustes). */
 :root {
-  color-scheme: light;
-  --bg: #f6f7f9;
-  --surface: #ffffff;
-  --ink: #181a1f;
-  --ink-2: #5b6170;
-  --line: #e3e6eb;
-  --line-2: #d3d7de;
-  --accent: #4b4fd6;
-  --accent-ink: #ffffff;
-  --accent-soft: #ecedfc;
-  --ok: #17794a;    --ok-bg: #e5f4ec;
-  --warn: #8a5a00;  --warn-bg: #fdf1d8;
-  --bad: #b42323;   --bad-bg: #fbe8e8;
-  --info: #2c5fb3;  --info-bg: #e7eefb;
-  --neutral-bg: #eef0f3;
-  --shadow: 0 1px 2px rgb(20 24 32 / 0.06), 0 4px 16px rgb(20 24 32 / 0.06);
+  color-scheme: light dark;
+  --bg: light-dark(#f6f7f9, #111317);
+  --surface: light-dark(#ffffff, #181b20);
+  --ink: light-dark(#181a1f, #e9ebef);
+  --ink-2: light-dark(#5b6170, #a1a7b4);
+  --line: light-dark(#e3e6eb, #262a31);
+  --line-2: light-dark(#d3d7de, #343943);
+  --accent: light-dark(#4b4fd6, #8b8ef5);
+  --accent-ink: light-dark(#ffffff, #111317);
+  --accent-soft: light-dark(#ecedfc, #23254a);
+  --ok: light-dark(#17794a, #5fd39a);    --ok-bg: light-dark(#e5f4ec, #12301f);
+  --warn: light-dark(#8a5a00, #f0bf5a);  --warn-bg: light-dark(#fdf1d8, #352812);
+  --bad: light-dark(#b42323, #f28b8b);   --bad-bg: light-dark(#fbe8e8, #3a1717);
+  --info: light-dark(#2c5fb3, #8fb4f5);  --info-bg: light-dark(#e7eefb, #172440);
+  --neutral-bg: light-dark(#eef0f3, #23272e);
+  --shadow: 0 1px 2px light-dark(rgb(20 24 32 / 0.06), rgb(0 0 0 / 0.4)), 0 4px 16px light-dark(rgb(20 24 32 / 0.06), rgb(0 0 0 / 0.3));
   --radius: 8px;
   --tap: 44px;
   font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --bg: #111317;
-    --surface: #181b20;
-    --ink: #e9ebef;
-    --ink-2: #a1a7b4;
-    --line: #262a31;
-    --line-2: #343943;
-    --accent: #8b8ef5;
-    --accent-ink: #111317;
-    --accent-soft: #23254a;
-    --ok: #5fd39a;    --ok-bg: #12301f;
-    --warn: #f0bf5a;  --warn-bg: #352812;
-    --bad: #f28b8b;   --bad-bg: #3a1717;
-    --info: #8fb4f5;  --info-bg: #172440;
-    --neutral-bg: #23272e;
-    --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 20px rgb(0 0 0 / 0.3);
-  }
-}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
 
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--ink); -webkit-text-size-adjust: 100%; }
@@ -187,6 +169,13 @@ input::placeholder, textarea::placeholder { color: color-mix(in srgb, var(--ink-
 .details dd.big { font-size: 1.25rem; font-weight: 600; font-variant-numeric: tabular-nums; }
 .notes { white-space: pre-wrap; margin: 0; padding: 0.9rem 1rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
 .account { margin-top: 1rem; }
+.segmented { display: inline-flex; padding: 3px; gap: 2px; background: var(--neutral-bg); border-radius: 9px; }
+.segmented label { display: block; color: var(--ink-2); font-size: 0.9rem; }
+.segmented input { position: absolute; opacity: 0; pointer-events: none; }
+.segmented label:has(input) { min-height: 36px; padding: 0.4rem 0.9rem; border-radius: 7px; cursor: pointer; display: flex; align-items: center; }
+.segmented label:has(:checked) { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+.segmented label:has(:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+.segmented + p { margin: 0.5rem 0 0; }
 .account p { margin: 0 0 0.75rem; }
 
 /* ---------- Vacío / login ---------- */

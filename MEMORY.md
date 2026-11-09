@@ -26,7 +26,10 @@ Bitácora del proyecto. Se actualiza al cerrar cada tarea.
 
 - Supabase conectado (2026-11-09): proyecto `bzfmtrawqzqgsyfrxwjy`, schema cargado, registros cerrados (verificado: signup_disabled). La app publicada muestra el login sin errores.
 
+- 2026-11-09: tipo de proyecto libre (texto con sugerencias) y selector de tema Automático/Claro/Oscuro en Ajustes (guardado en localStorage, por dispositivo).
+
 ## Pendiente del dueño (manual)
+- **Correr `supabase/migrations/002_tipo_libre.sql`** en el SQL Editor (sin esto, guardar un tipo nuevo falla).
 - Primer login real, completar Ajustes, cargar proyectos, probar un pago y "Compartir" en el celu.
 
 ## Problemas conocidos

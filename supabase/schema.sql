@@ -16,7 +16,7 @@ create table public.projects (
   id              bigint generated always as identity primary key,
   user_id         uuid not null default auth.uid() references auth.users on delete cascade,
   name            text not null check (length(trim(name)) > 0),
-  kind            text not null default 'web' check (kind in ('web', 'app', 'otro')),
+  kind            text not null default 'Web' check (length(trim(kind)) between 1 and 40),
   client          text not null default '',
   contact         text not null default '',
   url             text not null default '',
