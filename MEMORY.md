@@ -24,8 +24,10 @@ Bitácora del proyecto. Se actualiza al cerrar cada tarea.
 - GitHub Pages activo desde `main` / raíz: https://mauriciozarate0.github.io/administrador-proyectos/
 - `logo-animado/` es una carpeta aparte del dueño: quedó fuera del repo (.gitignore) hasta que confirme si va.
 
+- Supabase conectado (2026-11-09): proyecto `bzfmtrawqzqgsyfrxwjy`, schema cargado, registros cerrados (verificado: signup_disabled). La app publicada muestra el login sin errores.
+
 ## Pendiente del dueño (manual)
-- Crear proyecto Supabase, correr `supabase/schema.sql`, crear su usuario, desactivar registros, completar `config.js` y pushear.
+- Primer login real, completar Ajustes, cargar proyectos, probar un pago y "Compartir" en el celu.
 
 ## Problemas conocidos
 - Supabase gratis pausa tras 7 días sin uso (se restaura a mano).
