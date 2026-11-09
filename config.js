@@ -1,3 +1,3 @@
-// Completar con los datos de Supabase > Project Settings > API (ver README.md).
-export const SUPABASE_URL = 'https://TU-PROYECTO.supabase.co';
-export const SUPABASE_ANON_KEY = 'TU-CLAVE-ANON';
+// Datos de Supabase > Project Settings > API. La clave publishable es pública por diseño (la seguridad es RLS).
+export const SUPABASE_URL = 'https://bzfmtrawqzqgsyfrxwjy.supabase.co';
+export const SUPABASE_ANON_KEY = 'sb_publishable_gW9sRvhAVusMBBF-sJYKPg_G5s0DCx9';
