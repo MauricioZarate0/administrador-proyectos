@@ -275,3 +275,16 @@ details.void { margin-top: 1.5rem; }
 .links svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 @media (max-width: 959px) { .links span { display: none; } }
 @media (max-width: 719px) { .links { min-height: 40px; padding: 0 0.6rem; } .top { gap: 0.5rem; } }
+
+/* Lista de paneles cuando el navegador bloquea pestañas */
+.links-menu {
+  width: min(92vw, 440px); padding: 1.25rem; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--bg); color: var(--ink); box-shadow: var(--shadow);
+}
+.links-menu::backdrop { background: rgb(0 0 0 / 0.4); }
+.links-menu h2 { margin: 0 0 0.5rem; font-size: 1.05rem; }
+.links-menu p { margin: 0 0 0.75rem; }
+.links-menu .list { margin-bottom: 0.9rem; }
+.links-menu .row { min-height: 48px; }
+.links-menu .opened .title { color: var(--ink-2); text-decoration: line-through; }
+.links-menu form { display: flex; justify-content: flex-end; margin: 0; }

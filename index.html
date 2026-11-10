@@ -44,6 +44,13 @@
     </button>
   </header>
   <main id="view" tabindex="-1"><p class="muted pad">Cargando…</p></main>
+  <dialog id="links-menu" class="links-menu" aria-labelledby="links-title">
+    <h2 id="links-title">Abrir paneles</h2>
+    <p class="links-msg"></p>
+    <ul class="list"></ul>
+    <p class="muted small">Para que se abran todas juntas, permití las ventanas emergentes de <strong class="links-origin"></strong>. En Edge: Configuración › Cookies y permisos del sitio › Ventanas emergentes y redireccionamientos › Permitir › Agregar. En Chrome: Configuración › Privacidad y seguridad › Configuración de sitios › Ventanas emergentes.</p>
+    <form method="dialog"><button class="btn">Cerrar</button></form>
+  </dialog>
   <div id="toast" role="status" aria-live="polite"></div>
 </body>
 </html>

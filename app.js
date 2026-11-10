@@ -94,12 +94,31 @@ async function loadMep() {
 mepBox.addEventListener('click', loadMep);
 
 // Paneles rápidos: abre todas las URLs de Ajustes de un toque.
+// Los navegadores dejan abrir una sola ventana por toque salvo que el sitio tenga permitidas las emergentes:
+// las que se bloquean quedan en una lista para abrirlas con un toque cada una.
+const linksMenu = document.getElementById('links-menu');
 document.getElementById('links').addEventListener('click', () => {
   const urls = S.settings?.quick_links ?? [];
   if (!urls.length) { location.hash = '#/ajustes'; return toast('Cargá tus paneles en Ajustes.'); }
-  // sin 'noopener' para poder saber si el navegador bloqueó la ventana; se corta el vínculo a mano
-  const blocked = urls.filter((u) => { const w = window.open(u, '_blank'); if (w) w.opener = null; return !w; }).length;
-  if (blocked) toast(`Se abrieron ${urls.length - blocked} de ${urls.length}. Permití las ventanas emergentes para este sitio y probá de nuevo.`, true);
+  const blocked = urls.filter((u) => {
+    let w = null;
+    // sin 'noopener' para saber si se bloqueó (con noopener siempre devuelve null); el vínculo se corta a mano
+    try { w = window.open(u, '_blank'); w.opener = null; } catch {}
+    return !w;
+  });
+  if (!blocked.length) return;
+  linksMenu.querySelector('.links-msg').textContent = blocked.length === urls.length
+    ? 'El navegador no dejó abrir las pestañas. Tocá cada una:'
+    : `Se abrió ${urls.length - blocked.length} de ${urls.length}. El navegador frenó el resto, tocá cada una:`;
+  linksMenu.querySelector('ul').innerHTML = blocked.map((u) =>
+    `<li><a class="row" href="${esc(u)}" target="_blank" rel="noopener"><span class="title">${esc(u.replace(/^https?:\/\//, ''))}</span></a></li>`).join('');
+  linksMenu.querySelector('.links-origin').textContent = location.origin;
+  linksMenu.showModal();
+});
+linksMenu.addEventListener('click', (e) => {
+  const a = e.target.closest('a');
+  if (a) a.parentElement.classList.add('opened');
+  else if (e.target === linksMenu) linksMenu.close(); // toque fuera del cuadro
 });
 
 function renderLogin() {

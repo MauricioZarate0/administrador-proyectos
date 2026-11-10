@@ -35,7 +35,7 @@ Bitácora del proyecto. Se actualiza al cerrar cada tarea.
 
 - 2026-11-10: **"Por hacer"** en proyectos (tabla `tasks`, checklist; se muestra si el proyecto está En desarrollo o ya tiene tareas; la lista de proyectos dice cuántas quedan) y **Suscripciones** como pestaña aparte (tabla `subscriptions`: lo que paga el dueño, mensual/anual; "Pagada" corre la fecha un ciclo; aparecen en Renovaciones próximas del Panel). Son tablas aparte y no proyectos porque una suscripción es un costo propio, no un cobro a un cliente. Migración `005`. No se suman a Gastos/Ganancia del Panel (los gastos son por proyecto).
 
-- 2026-11-10: botón **Paneles** en la barra superior: abre juntas las URLs de `settings.quick_links` (text[], se editan en Ajustes, una por línea; si falta https:// se agrega). Por defecto Cloudflare y Supabase. Van en `settings` (no localStorage) para que sean las mismas en PC y celu. El navegador puede bloquear todas menos la primera: la app avisa que hay que permitir ventanas emergentes para el sitio. Migración `006`.
+- 2026-11-10: botón **Paneles** en la barra superior: abre juntas las URLs de `settings.quick_links` (text[], se editan en Ajustes, una por línea; si falta https:// se agrega). Por defecto Cloudflare y Supabase. Van en `settings` (no localStorage) para que sean las mismas en PC y celu. Los navegadores (Edge incluido) bloquean todas menos la primera si el sitio no tiene permitidas las emergentes, y en la app instalada ni se ve el ícono de bloqueo: las bloqueadas aparecen en un cuadro con un link cada una y cómo permitir emergentes. Migración `006`.
 
 ## Pendiente del dueño (manual)
 - Migración 006 aplicada y verificada (2026-11-10); botón Paneles publicado.
