@@ -93,6 +93,15 @@ async function loadMep() {
 }
 mepBox.addEventListener('click', loadMep);
 
+// Paneles rápidos: abre todas las URLs de Ajustes de un toque.
+document.getElementById('links').addEventListener('click', () => {
+  const urls = S.settings?.quick_links ?? [];
+  if (!urls.length) { location.hash = '#/ajustes'; return toast('Cargá tus paneles en Ajustes.'); }
+  // sin 'noopener' para poder saber si el navegador bloqueó la ventana; se corta el vínculo a mano
+  const blocked = urls.filter((u) => { const w = window.open(u, '_blank'); if (w) w.opener = null; return !w; }).length;
+  if (blocked) toast(`Se abrieron ${urls.length - blocked} de ${urls.length}. Permití las ventanas emergentes para este sitio y probá de nuevo.`, true);
+});
+
 function renderLogin() {
   topBar.hidden = true;
   view.innerHTML = `
@@ -513,6 +522,10 @@ function ajustes() {
         <label>Logo (PNG o JPG)<input name="logo" type="file" accept="image/png,image/jpeg"></label>
         ${s.logo_path ? `<p class="muted small">Ya tenés un logo cargado. <button type="button" class="link" data-act="remove-logo">Quitarlo</button></p>` : ''}
       </fieldset>
+      <fieldset><legend>Paneles rápidos</legend>
+        <label class="wide">Se abren todas juntas con el botón Paneles. Una dirección por línea.
+          <textarea name="quick_links" rows="4" placeholder="https://dash.cloudflare.com" spellcheck="false" autocapitalize="off">${esc((s.quick_links ?? []).join('\n'))}</textarea></label>
+      </fieldset>
       <div class="form-actions"><button class="btn primary">Guardar</button></div>
     </form>
     <section>
@@ -646,6 +659,11 @@ const submit = {
   async settings(fd) {
     const row = Object.fromEntries(['name', 'tax_id', 'address', 'email', 'phone'].map((k) => [k, fd.get(k).trim()]));
     row.next_receipt = Number(fd.get('next_receipt'));
+    row.quick_links = fd.get('quick_links').split('\n').map((u) => u.trim()).filter(Boolean)
+      .map((u) => (/^https?:\/\//i.test(u) ? u : `https://${u}`));
+    for (const u of row.quick_links) {
+      try { new URL(u); } catch { throw new Error(`"${u}" no es una dirección válida.`); }
+    }
     const logo = fd.get('logo');
     if (logo?.size) {
       if (logo.size > 2e6) throw new Error('El logo pesa más de 2 MB. Usá uno más liviano.');

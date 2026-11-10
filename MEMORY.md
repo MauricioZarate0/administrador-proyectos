@@ -35,7 +35,10 @@ Bitácora del proyecto. Se actualiza al cerrar cada tarea.
 
 - 2026-11-10: **"Por hacer"** en proyectos (tabla `tasks`, checklist; se muestra si el proyecto está En desarrollo o ya tiene tareas; la lista de proyectos dice cuántas quedan) y **Suscripciones** como pestaña aparte (tabla `subscriptions`: lo que paga el dueño, mensual/anual; "Pagada" corre la fecha un ciclo; aparecen en Renovaciones próximas del Panel). Son tablas aparte y no proyectos porque una suscripción es un costo propio, no un cobro a un cliente. Migración `005`. No se suman a Gastos/Ganancia del Panel (los gastos son por proyecto).
 
+- 2026-11-10: botón **Paneles** en la barra superior: abre juntas las URLs de `settings.quick_links` (text[], se editan en Ajustes, una por línea; si falta https:// se agrega). Por defecto Cloudflare y Supabase. Van en `settings` (no localStorage) para que sean las mismas en PC y celu. El navegador puede bloquear todas menos la primera: la app avisa que hay que permitir ventanas emergentes para el sitio. Migración `006`.
+
 ## Pendiente del dueño (manual)
+- Migración 006 aplicada y verificada (2026-11-10); botón Paneles publicado.
 - Migración 005 aplicada y verificada (2026-11-10); tareas y suscripciones publicadas.
 - Migraciones 003 y 004 aplicadas y verificadas (2026-11-09); todo publicado (commit 65f82fd). La 002 no se puede verificar con la clave anónima: si guardar un tipo nuevo falla, correrla.
 - Primer uso real: login, Ajustes, cargar proyectos, probar un pago y "Compartir" en el celu.

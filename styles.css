@@ -268,3 +268,10 @@ details.void { margin-top: 1.5rem; }
 .tasks .done .check-inline span { color: var(--ink-2); text-decoration: line-through; }
 @media (max-width: 559px) { .tasks .row { flex-wrap: nowrap; } .tasks .row .btn { margin-left: 0; } }
 @media (max-width: 719px) { .tabs a span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } }
+
+/* ---------- Botón Paneles (barra superior) ---------- */
+.links { margin-left: auto; min-height: 36px; padding: 0 0.7rem; font-size: 0.9rem; }
+.links + .mep { margin-left: 0; }
+.links svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+@media (max-width: 959px) { .links span { display: none; } }
+@media (max-width: 719px) { .links { min-height: 40px; padding: 0 0.6rem; } .top { gap: 0.5rem; } }

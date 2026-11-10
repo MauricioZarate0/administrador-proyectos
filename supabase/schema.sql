@@ -9,7 +9,9 @@ create table public.settings (
   email        text not null default '',
   phone        text not null default '',
   logo_path    text,
-  next_receipt int  not null default 1 check (next_receipt > 0)
+  next_receipt int  not null default 1 check (next_receipt > 0),
+  -- Paneles rápidos (botón "Paneles"): se abren todas juntas
+  quick_links  text[] not null default array['https://dash.cloudflare.com', 'https://supabase.com/dashboard']
 );
 
 create table public.projects (
