@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chargeStatus, renewals, monthTotals, projectTotals, adjustedFee, receiptLabel, receiptPath, daysUntil, dueDate, period } from './logic.js';
+import { chargeStatus, renewals, monthTotals, projectTotals, adjustedFee, receiptLabel, receiptPath, daysUntil, dueDate, period, addCycle, subscriptionRenewals, monthlyCost } from './logic.js';
 
 const today = new Date(2026, 10, 15); // 15 nov 2026
 const p = (o) => ({ id: 1, status: 'activo', fee: 100, currency: 'ARS', due_day: 10, ...o });
@@ -46,4 +46,16 @@ assert.deepEqual(renewals([p({ next_adjust: '2026-11-25' })], today).map((x) => 
 assert.equal(receiptLabel(7), 'R-0007');
 assert.equal(receiptPath('u1', 'Panadería López S.A.', '2026-11-15', 12), 'u1/panaderia-lopez-s-a/2026/R-0012.pdf');
 assert.equal(receiptPath('u1', '', '2026-11-15', 1), 'u1/sin-cliente/2026/R-0001.pdf');
+
+assert.equal(addCycle('2026-11-15', 'mensual'), '2026-12-15');
+assert.equal(addCycle('2026-12-20', 'mensual'), '2027-01-20');
+assert.equal(addCycle('2027-01-31', 'mensual'), '2027-02-28');
+assert.equal(addCycle('2028-02-29', 'anual'), '2029-02-28');
+const subs = [
+  { id: 1, next_renewal: '2026-12-30', currency: 'USD', amount: '20', cycle: 'mensual' },
+  { id: 2, next_renewal: '2026-11-10', currency: 'USD', amount: '120', cycle: 'anual' },
+  { id: 3, next_renewal: '2026-11-20', currency: 'ARS', amount: '5000', cycle: 'mensual' },
+];
+assert.deepEqual(subscriptionRenewals(subs, today).map((x) => [x.sub.id, x.left]), [[2, -5], [3, 5]]);
+assert.deepEqual(monthlyCost(subs), { USD: 30, ARS: 5000 });
 console.log('ok');

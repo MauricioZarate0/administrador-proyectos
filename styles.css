@@ -258,3 +258,13 @@ details.void { margin-top: 1.5rem; }
 .mep-sub { grid-column: 1 / -1; font-size: 0.7rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .mep.loading .mep-value { opacity: 0.45; }
 @media (max-width: 719px) { .mep { padding: 0.2rem 0.6rem; } .mep-sub { display: none; } }
+
+/* ---------- Por hacer (tareas del proyecto) ---------- */
+.task-add { display: flex; gap: 0.5rem; margin-bottom: 0.6rem; }
+.task-add input { flex: 1; min-width: 0; }
+.tasks .row { min-height: 48px; padding-block: 0.25rem; }
+.tasks .check-inline { flex: 1; min-width: 0; cursor: pointer; font-size: 0.95rem; font-weight: 400; }
+.tasks .check-inline span { overflow-wrap: anywhere; }
+.tasks .done .check-inline span { color: var(--ink-2); text-decoration: line-through; }
+@media (max-width: 559px) { .tasks .row { flex-wrap: nowrap; } .tasks .row .btn { margin-left: 0; } }
+@media (max-width: 719px) { .tabs a span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } }

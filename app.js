@@ -4,7 +4,7 @@ import * as L from './logic.js';
 
 const view = document.getElementById('view');
 const topBar = document.querySelector('.top');
-const S = { user: null, settings: null, projects: [], payments: [], expenses: [], feeChanges: [], filter: { project: '', month: '' } };
+const S = { user: null, settings: null, projects: [], payments: [], expenses: [], feeChanges: [], tasks: [], subscriptions: [], filter: { project: '', month: '' } };
 const pdfCache = new Map(); // payment id -> Blob, para que "Compartir" no espere la red
 
 const STATUS = { activo: 'Activo', desarrollo: 'En desarrollo', pausado: 'Pausado', finalizado: 'Finalizado' };
@@ -14,6 +14,8 @@ const cap = (s) => s[0].toUpperCase() + s.slice(1);
 const q = async (p) => { const { data, error } = await p; if (error) throw error; return data; };
 const byId = (id) => S.projects.find((p) => p.id === Number(id));
 const payById = (id) => S.payments.find((p) => p.id === Number(id));
+const subById = (id) => S.subscriptions.find((x) => x.id === Number(id));
+const pendingTasks = (id) => S.tasks.filter((t) => t.project_id === id && !t.done).length;
 
 let toastTimer;
 function toast(msg, bad = false) {
@@ -50,15 +52,17 @@ if (SUPABASE_URL.includes('TU-PROYECTO')) {
 
 async function load() {
   // shortcut: trae todo de una (Supabase corta en 1000 filas); paginar los pagos si se pasa de ~900 recibos.
-  const [settings, projects, payments, expenses, feeChanges] = await Promise.all([
+  const [settings, projects, payments, expenses, feeChanges, tasks, subscriptions] = await Promise.all([
     q(sb.from('settings').select('*').maybeSingle()),
     q(sb.from('projects').select('*').order('name')),
     q(sb.from('payments').select('*').order('receipt_no', { ascending: false })),
     q(sb.from('expenses').select('*').order('spent_on', { ascending: false })),
     q(sb.from('fee_changes').select('*').order('changed_at', { ascending: false })),
+    q(sb.from('tasks').select('*').order('created_at')),
+    q(sb.from('subscriptions').select('*').order('next_renewal')),
   ]);
   S.settings = settings ?? (await q(sb.from('settings').insert({}).select().single()));
-  Object.assign(S, { projects, payments, expenses, feeChanges });
+  Object.assign(S, { projects, payments, expenses, feeChanges, tasks, subscriptions });
   loadMep();
   topBar.hidden = false;
   route();
@@ -103,8 +107,8 @@ function renderLogin() {
 
 // ---------- Rutas ----------
 
-const TAB = { proyecto: 'proyectos', nuevo: 'proyectos', editar: 'proyectos', pago: 'proyectos', aumento: 'proyectos', recibo: 'recibos' };
-const routes = { panel, proyectos, proyecto, nuevo: () => projectForm(), editar: (id) => projectForm(byId(id)), pago: payForm, aumento, recibos, recibo, ajustes };
+const TAB = { proyecto: 'proyectos', nuevo: 'proyectos', editar: 'proyectos', pago: 'proyectos', aumento: 'proyectos', recibo: 'recibos', suscripcion: 'suscripciones' };
+const routes = { panel, proyectos, proyecto, nuevo: () => projectForm(), editar: (id) => projectForm(byId(id)), pago: payForm, aumento, recibos, recibo, ajustes, suscripciones, suscripcion: (id) => subForm(subById(id)) };
 
 function route() {
   if (!S.user || !S.settings) return;
@@ -175,10 +179,13 @@ function panel() {
     .map((p) => ({ p, s: L.chargeStatus(p, S.payments, today) }))
     .filter((x) => x.s === 'pendiente' || x.s === 'vencido')
     .sort((a, b) => (a.s === 'vencido' ? -1 : 0) - (b.s === 'vencido' ? -1 : 0) || (a.p.due_day ?? 99) - (b.p.due_day ?? 99));
-  const ren = L.renewals(S.projects, today);
+  const ren = [
+    ...L.renewals(S.projects, today).map((r) => ({ ...r, title: `${r.label} · ${r.project.name}`, href: `#/proyecto/${r.project.id}` })),
+    ...L.subscriptionRenewals(S.subscriptions, today).map((r) => ({ ...r, title: `Suscripción · ${r.sub.name}`, href: '#/suscripciones' })),
+  ].sort((a, b) => a.left - b.left);
   const totals = L.monthTotals(S.projects, S.payments, S.expenses, today);
 
-  if (!S.projects.length) {
+  if (!S.projects.length && !S.subscriptions.length) {
     return `<h1>Panel</h1>${empty('Todavía no cargaste proyectos', 'Cargá tus webs y apps con su cuota y fechas, y acá vas a ver qué cobrar y qué renovar cada mes.', '<a class="btn primary" href="#/nuevo">Nuevo proyecto</a>')}`;
   }
   return `
@@ -200,8 +207,8 @@ function panel() {
     <section>
       <h2>Renovaciones próximas</h2>
       ${ren.length ? `<ul class="list">${ren.map((r) => `
-        <li><a class="row" href="#/proyecto/${r.project.id}">
-          <span class="row-main"><span class="title">${r.label} · ${esc(r.project.name)}</span><span class="sub">${esc(L.dateLabel(r.date))}</span></span>
+        <li><a class="row" href="${r.href}">
+          <span class="row-main"><span class="title">${esc(r.title)}</span><span class="sub">${esc(L.dateLabel(r.date))}</span></span>
           ${badge(r.left < 0 ? 'bad' : r.left <= 7 ? 'warn' : 'neutral', cap(leftText(r.left)))}
         </a></li>`).join('')}</ul>` : `<p class="muted calm">Nada vence en los próximos 30 días.</p>`}
     </section>`;
@@ -216,7 +223,7 @@ function proyectos() {
     ${list.length ? `<ul class="list">${list.map((p) => {
       const s = L.chargeStatus(p, S.payments, today);
       return `<li><a class="row" href="#/proyecto/${p.id}">
-        <span class="row-main has-avatar">${avatar(p)}<span class="title">${esc(p.name)}</span><span class="sub">${esc(p.kind)}${p.client ? ' · ' + esc(p.client) : ''}</span></span>
+        <span class="row-main has-avatar">${avatar(p)}<span class="title">${esc(p.name)}</span><span class="sub">${esc(p.kind)}${p.client ? ' · ' + esc(p.client) : ''}${pendingTasks(p.id) ? ` · ${pendingTasks(p.id)} por hacer` : ''}</span></span>
         <span class="amount">${p.fee > 0 ? L.money(p.fee, p.currency) + '<small>/mes</small>' : ''}</span>
         ${s ? chargeBadge(s) : ''}${statusBadge(p.status)}
       </a></li>`;
@@ -229,6 +236,7 @@ function proyecto(id) {
   const pays = S.payments.filter((x) => x.project_id === p.id);
   const exps = S.expenses.filter((x) => x.project_id === p.id);
   const fees = S.feeChanges.filter((x) => x.project_id === p.id);
+  const tasks = S.tasks.filter((t) => t.project_id === p.id).sort((a, b) => a.done - b.done);
   const totals = L.projectTotals(p.id, S.payments, S.expenses);
   const safeUrl = /^https?:\/\//i.test(p.url) ? p.url : '';
   const row = (k, v) => v ? `<div><dt>${k}</dt><dd>${v}</dd></div>` : '';
@@ -250,6 +258,18 @@ function proyecto(id) {
       ${row('Renovación hosting', p.hosting_renewal && esc(L.dateLabel(p.hosting_renewal)))}
       ${row('Próximo ajuste de cuota', p.next_adjust && esc(L.dateLabel(p.next_adjust)))}
     </dl>
+    ${p.status === 'desarrollo' || tasks.length ? `<section>
+      <h2>Por hacer</h2>
+      <form class="task-add" data-form="task" data-id="${p.id}">
+        <input name="text" required maxlength="500" placeholder="Anotá algo para hacer…" aria-label="Nueva tarea" autocomplete="off">
+        <button class="btn primary">Agregar</button>
+      </form>
+      ${tasks.length ? `<ul class="list tasks">${tasks.map((t) => `
+        <li class="row${t.done ? ' done' : ''}">
+          <label class="check-inline"><input type="checkbox" data-task="${t.id}" ${t.done ? 'checked' : ''}><span>${esc(t.text)}</span></label>
+          <button class="btn sm ghost" data-act="delete-task" data-id="${t.id}" aria-label="Borrar tarea ${esc(t.text)}">Borrar</button>
+        </li>`).join('')}</ul>` : ''}
+    </section>` : ''}
     ${p.notes ? `<section><h2>Notas</h2><p class="notes">${esc(p.notes)}</p></section>` : ''}
     ${Object.keys(totals).length ? `<section><h2>Balance del proyecto</h2>${totalsBlock(totals, ['cobrado', 'gastos', 'ganancia'])}</section>` : ''}
 
@@ -433,6 +453,48 @@ function recibo(id) {
     </details>`}`;
 }
 
+const CYCLE = { mensual: 'Mensual', anual: 'Anual' };
+
+function suscripciones() {
+  const today = new Date();
+  const cost = L.monthlyCost(S.subscriptions);
+  return `
+    <div class="head"><h1>Suscripciones</h1><div class="actions"><a class="btn primary" href="#/suscripcion">Nueva suscripción</a></div></div>
+    <p class="muted">Lo que pagás vos (Claude, hosting, dominios…). Aparecen en el Panel 30 días antes de renovar.</p>
+    ${Object.keys(cost).length ? `<div class="totals"><dl>${Object.entries(cost).map(([c, v]) => `<div><dt>Por mes en ${CUR[c].toLowerCase()}</dt><dd>${L.money(v, c)}</dd></div>`).join('')}</dl></div>` : ''}
+    ${S.subscriptions.length ? `<ul class="list subs">${S.subscriptions.map((x) => {
+      const left = L.daysUntil(x.next_renewal, today);
+      return `<li class="row">
+        <a class="row-main" href="#/suscripcion/${x.id}"><span class="title">${esc(x.name)}</span><span class="sub">${CYCLE[x.cycle]} · renueva el ${esc(L.dateLabel(x.next_renewal))}</span></a>
+        <span class="amount">${x.amount > 0 ? L.money(x.amount, x.currency) + `<small>/${x.cycle === 'anual' ? 'año' : 'mes'}</small>` : ''}</span>
+        ${left <= 30 ? badge(left < 0 ? 'bad' : left <= 7 ? 'warn' : 'neutral', cap(leftText(left))) : ''}
+        <button class="btn sm" data-act="renew-sub" data-id="${x.id}">Pagada</button>
+      </li>`;
+    }).join('')}</ul>` : empty('Sin suscripciones', 'Cargá las que pagás todos los meses o años y te avisamos antes de cada renovación.')}`;
+}
+
+function subForm(x) {
+  const v = x ?? { currency: 'USD', cycle: 'mensual' };
+  const f = (name, label, type = 'text', extra = '') => `<label>${label}<input name="${name}" type="${type}" value="${esc(v[name])}" ${extra}></label>`;
+  const opt = (map, cur) => Object.entries(map).map(([k, t]) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${t}</option>`).join('');
+  return `
+    <a class="back" href="#/suscripciones">Suscripciones</a>
+    <h1>${x ? 'Editar suscripción' : 'Nueva suscripción'}</h1>
+    <form class="form narrow" data-form="subscription" data-id="${x?.id ?? ''}">
+      ${f('name', 'Nombre', 'text', 'required autofocus maxlength="80" placeholder="Claude, hosting, dominio…"')}
+      ${f('amount', 'Precio', 'number', 'min="0" step="0.01" inputmode="decimal"')}
+      <label>Moneda<select name="currency">${opt({ USD: 'Dólares (USD)', ARS: 'Pesos (ARS)' }, v.currency)}</select></label>
+      <label>Se paga<select name="cycle">${opt(CYCLE, v.cycle)}</select></label>
+      ${f('next_renewal', 'Próxima renovación', 'date', 'required')}
+      ${f('url', 'Link para pagar', 'url', 'placeholder="https://"')}
+      <label>Notas<textarea name="notes" rows="3">${esc(v.notes)}</textarea></label>
+      <div class="form-actions">
+        <button class="btn primary">Guardar</button>
+        ${x ? `<button type="button" class="btn danger" data-act="delete-sub" data-id="${x.id}">Borrar</button>` : ''}
+      </div>
+    </form>`;
+}
+
 function ajustes() {
   const s = S.settings;
   const f = (name, label, type = 'text', extra = '') => `<label>${label}<input name="${name}" type="${type}" value="${esc(s[name])}" ${extra}></label>`;
@@ -522,6 +584,24 @@ const submit = {
     S.expenses = [e, ...S.expenses].sort((a, b) => b.spent_on.localeCompare(a.spent_on));
     toast('Gasto guardado');
     route();
+  },
+
+  async task(fd, form) {
+    const t = await q(sb.from('tasks').insert({ project_id: Number(form.dataset.id), text: fd.get('text').trim() }).select().single());
+    S.tasks.push(t);
+    rerender('[data-form=task] input');
+  },
+
+  async subscription(fd, form) {
+    const row = Object.fromEntries(fd);
+    Object.assign(row, { name: row.name.trim(), amount: Number(row.amount || 0), url: row.url.trim(), notes: row.notes.trim() });
+    const id = Number(form.dataset.id);
+    const saved = id
+      ? await q(sb.from('subscriptions').update(row).eq('id', id).select().single())
+      : await q(sb.from('subscriptions').insert(row).select().single());
+    S.subscriptions = [...S.subscriptions.filter((x) => x.id !== saved.id), saved].sort(byRenewal);
+    toast('Suscripción guardada');
+    location.hash = '#/suscripciones';
   },
 
   async void(fd, form) {
@@ -635,10 +715,32 @@ const actions = {
     Object.assign(p, await q(sb.from('projects').update({ contract_path: null }).eq('id', p.id).select().single()));
     route();
   },
+  async 'delete-task'(el) {
+    const id = Number(el.dataset.id);
+    await q(sb.from('tasks').delete().eq('id', id));
+    S.tasks = S.tasks.filter((t) => t.id !== id);
+    rerender();
+  },
+  async 'renew-sub'(el) {
+    const x = subById(el.dataset.id);
+    const next = L.addCycle(x.next_renewal, x.cycle);
+    Object.assign(x, await q(sb.from('subscriptions').update({ next_renewal: next }).eq('id', x.id).select().single()));
+    S.subscriptions.sort(byRenewal);
+    toast(`${x.name}: próxima renovación el ${L.dateLabel(next)}`);
+    rerender();
+  },
+  async 'delete-sub'(el) {
+    const x = subById(el.dataset.id);
+    if (!confirm(`¿Borrar la suscripción "${x.name}"?`)) return;
+    await q(sb.from('subscriptions').delete().eq('id', x.id));
+    S.subscriptions = S.subscriptions.filter((s) => s.id !== x.id);
+    toast('Suscripción borrada');
+    location.hash = '#/suscripciones';
+  },
   'clear-filter'() { S.filter = { project: '', month: '' }; route(); },
   async logout() {
     await sb.auth.signOut();
-    Object.assign(S, { settings: null, projects: [], payments: [], expenses: [], feeChanges: [] });
+    Object.assign(S, { settings: null, projects: [], payments: [], expenses: [], feeChanges: [], tasks: [], subscriptions: [] });
     pdfCache.clear();
     location.hash = '';
   },
@@ -671,6 +773,15 @@ view.addEventListener('input', (e) => {
   if (e.target.form?.dataset.form === 'adjust') updatePreview(e.target.form);
 });
 
+const byRenewal = (a, b) => a.next_renewal.localeCompare(b.next_renewal);
+// Re-renderiza sin saltar arriba (para tildar o sumar tareas seguidas); `focus` vuelve a enfocar ese campo.
+function rerender(focus) {
+  const y = window.scrollY;
+  route();
+  window.scrollTo(0, y);
+  if (focus) view.querySelector(focus)?.focus({ preventScroll: true });
+}
+
 const reloadFeeChanges = async () => {
   S.feeChanges = await q(sb.from('fee_changes').select('*').order('changed_at', { ascending: false }));
 };
@@ -681,11 +792,25 @@ view.addEventListener('change', (e) => {
     try { localStorage.setItem('theme', e.target.value); } catch {}
     return;
   }
+  if (e.target.dataset.task) return toggleTask(e.target);
   const k = e.target.dataset.filter;
   if (!k) return;
   S.filter[k] = e.target.value;
   route();
 });
+
+async function toggleTask(box) {
+  const t = S.tasks.find((x) => x.id === Number(box.dataset.task));
+  box.disabled = true;
+  try {
+    Object.assign(t, await q(sb.from('tasks').update({ done: box.checked }).eq('id', t.id).select().single()));
+    rerender();
+  } catch (err) {
+    box.checked = !box.checked;
+    box.disabled = false;
+    toast(errorText(err), true);
+  }
+}
 
 // ---------- PDF ----------
 

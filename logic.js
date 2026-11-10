@@ -79,3 +79,26 @@ export const slug = (s) => (s || 'sin-cliente').normalize('NFD').replace(/[̀-ͯ
   .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'sin-cliente';
 export const receiptPath = (userId, client, paidOn, n) =>
   `${userId}/${slug(client)}/${paidOn.slice(0, 4)}/${receiptLabel(n)}.pdf`;
+
+// ---------- Suscripciones ----------
+
+// Siguiente renovación: un mes o un año después (un 31 pasa al último día si el mes es más corto).
+export function addCycle(s, cycle) {
+  const d = parseDate(s);
+  const m = d.getMonth() + (cycle === 'anual' ? 12 : 1);
+  const last = new Date(d.getFullYear(), m + 1, 0).getDate();
+  return isoDate(new Date(d.getFullYear(), m, Math.min(d.getDate(), last)));
+}
+
+// Suscripciones vencidas o que renuevan dentro de `days` días, de la más urgente a la menos.
+export const subscriptionRenewals = (subs, today, days = 30) => subs
+  .map((sub) => ({ sub, date: sub.next_renewal, left: daysUntil(sub.next_renewal, today) }))
+  .filter((x) => x.left <= days)
+  .sort((a, b) => a.left - b.left);
+
+// Costo mensual por moneda (las anuales se prorratean en 12).
+export function monthlyCost(subs) {
+  const t = {};
+  for (const s of subs) t[s.currency] = (t[s.currency] ?? 0) + Number(s.amount) / (s.cycle === 'anual' ? 12 : 1);
+  return t;
+}
