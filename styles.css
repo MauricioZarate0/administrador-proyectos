@@ -230,3 +230,31 @@ details.void { margin-top: 1.5rem; }
 .check + .check { border-top: 1px solid var(--line); }
 .check input { width: 18px; height: 18px; min-height: 0; accent-color: var(--accent); flex: none; }
 .check .sub { font-variant-numeric: tabular-nums; }
+
+/* ---------- Íconos de proyecto ---------- */
+.avatar {
+  display: inline-grid; place-items: center; flex: none;
+  width: 36px; height: 36px; border-radius: 9px; object-fit: cover;
+  background: var(--accent-soft); color: var(--accent); font-weight: 650; font-size: 0.95rem;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.avatar.lg { width: 44px; height: 44px; border-radius: 11px; font-size: 1.15rem; }
+.row-main.has-avatar { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 0.75rem; align-items: center; }
+.has-avatar .avatar { grid-row: span 2; }
+.icon-field { display: flex; align-items: flex-end; gap: 0.75rem; flex-wrap: wrap; }
+.icon-field > label:not(.check-inline) { flex: 1 1 200px; }
+.check-inline { display: flex; flex-direction: row; align-items: center; gap: 0.45rem; min-height: 40px; color: var(--ink); }
+.check-inline input { width: 18px; height: 18px; min-height: 0; accent-color: var(--accent); }
+
+/* ---------- Dólar MEP (barra superior, a la derecha) ---------- */
+.mep {
+  margin-left: auto; display: grid; grid-template-columns: auto auto; column-gap: 0.5rem; align-items: baseline;
+  padding: 0.3rem 0.7rem; border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
+  color: var(--ink); font: inherit; text-align: left; cursor: pointer;
+}
+.mep:hover { border-color: var(--line-2); }
+.mep-label { font-size: 0.72rem; color: var(--ink-2); font-weight: 500; }
+.mep-value { font-weight: 650; font-variant-numeric: tabular-nums; }
+.mep-sub { grid-column: 1 / -1; font-size: 0.7rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.mep.loading .mep-value { opacity: 0.45; }
+@media (max-width: 719px) { .mep { padding: 0.2rem 0.6rem; } .mep-sub { display: none; } }

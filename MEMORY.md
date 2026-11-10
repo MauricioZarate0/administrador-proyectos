@@ -31,8 +31,10 @@ Bitácora del proyecto. Se actualiza al cerrar cada tarea.
 - 2026-11-09: contrato PDF por proyecto (`recibos/<uid>/contratos/<id>.pdf`), anular recibo (sello ANULADO, el mes vuelve a pendiente, no se deshace), aumento de cuotas (`adjust_fees`; redondeo solo en ARS, USD a centavos) con historial automático por trigger (`fee_changes`), y gastos por proyecto con ganancia en Panel y en el proyecto. Migración `003`.
 - **Orden de despliegue con migraciones:** correr el SQL antes de pushear; la app lee las tablas nuevas al cargar y sin ellas no arranca.
 
+- 2026-11-09: ícono opcional por proyecto (96px, data URL en `projects.icon`, migración `004`; sin ícono se muestra la inicial) y cuadro del dólar MEP arriba a la derecha (dolarapi.com `/v1/dolares/bolsa`, se consulta al abrir/iniciar sesión y al tocarlo).
+
 ## Pendiente del dueño (manual)
-- **Correr `supabase/migrations/003_contrato_anular_cuotas_gastos.sql`** y después pushear el commit local (no se subió para no romper la app publicada).
+- **Correr `supabase/migrations/003_…sql` y `004_icono_proyecto.sql`** y después pushear los commits locales (no se subieron para no romper la app publicada).
 - **Correr `supabase/migrations/002_tipo_libre.sql`** en el SQL Editor (sin esto, guardar un tipo nuevo falla).
 - Primer login real, completar Ajustes, cargar proyectos, probar un pago y "Compartir" en el celu.
 

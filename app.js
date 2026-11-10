@@ -59,9 +59,35 @@ async function load() {
   ]);
   S.settings = settings ?? (await q(sb.from('settings').insert({}).select().single()));
   Object.assign(S, { projects, payments, expenses, feeChanges });
+  loadMep();
   topBar.hidden = false;
   route();
 }
+
+// Dólar MEP (dolarapi.com, "bolsa"): se consulta al abrir la app o iniciar sesión, y al tocar el cuadro.
+const mepBox = document.getElementById('mep');
+async function loadMep() {
+  const [value, sub] = ['.mep-value', '.mep-sub'].map((c) => mepBox.querySelector(c));
+  mepBox.hidden = false;
+  mepBox.classList.add('loading');
+  try {
+    const r = await fetch('https://dolarapi.com/v1/dolares/bolsa', { cache: 'no-store' });
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
+    const when = new Date(d.fechaActualizacion).toLocaleString('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    value.textContent = L.money(d.venta, 'ARS');
+    sub.textContent = `compra ${L.money(d.compra, 'ARS')} · ${when}`;
+    mepBox.title = `Dólar MEP: venta ${L.money(d.venta, 'ARS')}, compra ${L.money(d.compra, 'ARS')}, actualizado ${when}. Tocá para actualizar.`;
+  } catch {
+    value.textContent = 'Sin datos';
+    sub.textContent = 'tocá para reintentar';
+    mepBox.title = 'No se pudo consultar el dólar MEP. Tocá para reintentar.';
+  } finally {
+    mepBox.classList.remove('loading');
+    mepBox.setAttribute('aria-label', mepBox.title);
+  }
+}
+mepBox.addEventListener('click', loadMep);
 
 function renderLogin() {
   topBar.hidden = true;
@@ -105,6 +131,22 @@ const leftText = (n) => n === 0 ? 'hoy' : n > 0 ? `en ${n} día${n > 1 ? 's' : '
 const empty = (title, text, action = '') => `<div class="empty"><p class="empty-title">${title}</p><p class="muted">${text}</p>${action}</div>`;
 // timestamptz → fecha local (slice(0, 10) daría el día UTC, que de noche en Argentina ya es mañana)
 const stampLabel = (ts) => new Date(ts).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' });
+const avatar = (p, size = "") => p.icon
+  ? `<img class="avatar ${size}" src="${esc(p.icon)}" alt="">`
+  : `<span class="avatar ${size}" aria-hidden="true">${esc((p.name || "?").trim()[0]?.toUpperCase() ?? "?")}</span>`;
+
+// Achica la imagen a 96px (recorte centrado) y la guarda como data URL: carga junto con el proyecto, sin pedir archivos aparte.
+async function toIcon(file) {
+  if (!file.type.startsWith("image/")) throw new Error("El ícono tiene que ser una imagen.");
+  const img = await createImageBitmap(file).catch(() => { throw new Error("No se pudo leer la imagen."); });
+  const n = 96, c = Object.assign(document.createElement("canvas"), { width: n, height: n });
+  const side = Math.min(img.width, img.height);
+  c.getContext("2d").drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, n, n);
+  const url = c.toDataURL("image/webp", 0.85); // Safari viejo devuelve PNG, que también entra
+  if (url.length >= 60000) throw new Error("El ícono quedó muy pesado. Probá con otra imagen.");
+  return url;
+}
+
 const curOptions = (cur) => ['ARS', 'USD'].map((c) => `<option ${c === cur ? 'selected' : ''}>${c}</option>`).join('');
 
 const LABEL = { cobrado: 'Cobrado', pendiente: 'Pendiente', gastos: 'Gastos', ganancia: 'Ganancia' };
@@ -148,7 +190,7 @@ function panel() {
       <h2>Para cobrar</h2>
       ${charges.length ? `<ul class="list">${charges.map(({ p, s }) => `
         <li class="row">
-          <a class="row-main" href="#/proyecto/${p.id}"><span class="title">${esc(p.name)}</span><span class="sub">${esc(p.client || p.kind)} · ${dueText(p, s, today)}</span></a>
+          <a class="row-main has-avatar" href="#/proyecto/${p.id}">${avatar(p)}<span class="title">${esc(p.name)}</span><span class="sub">${esc(p.client || p.kind)} · ${dueText(p, s, today)}</span></a>
           <span class="amount">${L.money(p.fee, p.currency)}</span>
           ${chargeBadge(s)}
           <a class="btn sm" href="#/pago/${p.id}">Registrar pago</a>
@@ -174,7 +216,7 @@ function proyectos() {
     ${list.length ? `<ul class="list">${list.map((p) => {
       const s = L.chargeStatus(p, S.payments, today);
       return `<li><a class="row" href="#/proyecto/${p.id}">
-        <span class="row-main"><span class="title">${esc(p.name)}</span><span class="sub">${esc(p.kind)}${p.client ? ' · ' + esc(p.client) : ''}</span></span>
+        <span class="row-main has-avatar">${avatar(p)}<span class="title">${esc(p.name)}</span><span class="sub">${esc(p.kind)}${p.client ? ' · ' + esc(p.client) : ''}</span></span>
         <span class="amount">${p.fee > 0 ? L.money(p.fee, p.currency) + '<small>/mes</small>' : ''}</span>
         ${s ? chargeBadge(s) : ''}${statusBadge(p.status)}
       </a></li>`;
@@ -193,7 +235,7 @@ function proyecto(id) {
   return `
     <a class="back" href="#/proyectos">Proyectos</a>
     <div class="head">
-      <h1>${esc(p.name)} ${statusBadge(p.status)}</h1>
+      <h1>${avatar(p, "lg")}${esc(p.name)} ${statusBadge(p.status)}</h1>
       <div class="actions"><a class="btn" href="#/editar/${p.id}">Editar</a><a class="btn primary" href="#/pago/${p.id}">Registrar pago</a></div>
     </div>
     <dl class="details">
@@ -298,6 +340,8 @@ function projectForm(p) {
         ${f('kind', 'Tipo', 'text', 'list="kinds" required maxlength="40" placeholder="Web, App, Landing…"')}
         <datalist id="kinds">${[...new Set([...KINDS, ...S.projects.map((x) => x.kind)])].map((k) => `<option value="${esc(k)}">`).join('')}</datalist>
         <label>Estado<select name="status">${opt(STATUS, v.status)}</select></label>
+        <div class="icon-field">${p ? avatar(v, "lg") : ""}<label>Ícono (opcional)<input name="icon_file" type="file" accept="image/*"></label>
+          ${v.icon ? '<label class="check-inline"><input type="checkbox" name="icon_remove"> Quitar ícono</label>' : ""}</div>
         ${f('url', 'Sitio o link', 'url', 'placeholder="https://"')}
       </fieldset>
       <fieldset><legend>Cliente</legend>
@@ -435,6 +479,10 @@ const submit = {
 
   async project(fd, form) {
     const row = Object.fromEntries(fd);
+    const iconFile = row.icon_file;
+    delete row.icon_file; delete row.icon_remove;
+    if (iconFile?.size) row.icon = await toIcon(iconFile);
+    else if (fd.get('icon_remove')) row.icon = null;
     Object.assign(row, {
       name: row.name.trim(),
       kind: row.kind.trim(),

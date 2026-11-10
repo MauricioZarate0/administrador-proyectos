@@ -29,6 +29,7 @@ create table public.projects (
   hosting_renewal date,
   notes           text not null default '',
   contract_path   text,
+  icon            text check (icon is null or (icon like 'data:image/%' and length(icon) < 60000)),
   next_adjust     date,
   created_at      timestamptz not null default now()
 );
