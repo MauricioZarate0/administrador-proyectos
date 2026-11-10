@@ -89,10 +89,15 @@ main { max-width: 920px; margin: 0 auto; padding: 1.75rem 1.25rem 4rem; outline:
 .notice a { color: inherit; font-weight: 600; }
 
 /* ---------- Totales del mes ---------- */
-.totals { display: flex; flex-wrap: wrap; gap: 0.5rem 2.5rem; margin: 1rem 0 0; }
+.totals { margin: 1rem 0 0; }
+.totals + .totals { margin-top: 0.9rem; }
+.totals .cur { margin: 0 0 0.15rem; font-size: 0.75rem; font-weight: 600; color: var(--ink-2); letter-spacing: 0.02em; }
+.totals dl { display: grid; grid-template-columns: repeat(4, minmax(0, max-content)); gap: 0.25rem 2.5rem; margin: 0; }
 .totals dt { font-size: 0.8rem; color: var(--ink-2); }
-.totals dd { margin: 0; font-size: 1.35rem; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.totals dd { margin: 0; font-size: 1.3rem; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; white-space: nowrap; }
 .totals dd.pending { color: var(--warn); }
+.totals dd.neg { color: var(--bad); }
+@media (max-width: 559px) { .totals dl { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem 1rem; } .totals dd { font-size: 1.15rem; } }
 
 /* ---------- Listas ---------- */
 .list { list-style: none; margin: 0; padding: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
@@ -198,3 +203,30 @@ input::placeholder, textarea::placeholder { color: color-mix(in srgb, var(--ink-
 #toast.bad { background: var(--bad); color: #fff; }
 @media (max-width: 719px) { #toast { bottom: calc(5.25rem + env(safe-area-inset-bottom)); } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* ---------- Gastos, contrato, aumento, anulación ---------- */
+.notice.bad { background: var(--bad-bg); color: var(--bad); }
+.amount.voided { text-decoration: line-through; color: var(--ink-2); }
+.btn.primary.danger { background: var(--bad); border-color: var(--bad); color: var(--surface); }
+.btn.primary.danger:hover { background: color-mix(in srgb, var(--bad) 88%, var(--ink)); }
+.section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin: 2.25rem 0 0.6rem; }
+.section-head h2 { margin: 0.35rem 0 0; }
+details.add { flex: 0 1 auto; }
+details.add > summary { list-style: none; }
+details.add > summary::-webkit-details-marker { display: none; }
+details.add[open] { flex-basis: 100%; }
+details.add[open] > summary { margin-bottom: 0.75rem; }
+.form.inline { padding: 1rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.9rem 1rem; max-width: none; }
+.form.inline .form-actions, .form.inline .wide { grid-column: 1 / -1; }
+.form.inline p { margin: 0; }
+details.void { margin-top: 1.5rem; }
+.contract { display: grid; gap: 0.9rem; }
+.contract .actions { margin: 0; }
+.upload { display: flex; gap: 0.75rem; align-items: flex-end; flex-wrap: wrap; }
+.upload label { flex: 1 1 240px; }
+.checks { grid-template-columns: 1fr; gap: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.checks legend { margin-bottom: 0.6rem; }
+.check { display: flex; flex-direction: row; align-items: center; gap: 0.75rem; min-height: 56px; padding: 0.5rem 1rem; color: var(--ink); cursor: pointer; }
+.check + .check { border-top: 1px solid var(--line); }
+.check input { width: 18px; height: 18px; min-height: 0; accent-color: var(--accent); flex: none; }
+.check .sub { font-variant-numeric: tabular-nums; }

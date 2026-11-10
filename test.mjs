@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chargeStatus, renewals, monthTotals, receiptLabel, receiptPath, daysUntil, dueDate, period } from './logic.js';
+import { chargeStatus, renewals, monthTotals, projectTotals, adjustedFee, receiptLabel, receiptPath, daysUntil, dueDate, period } from './logic.js';
 
 const today = new Date(2026, 10, 15); // 15 nov 2026
 const p = (o) => ({ id: 1, status: 'activo', fee: 100, currency: 'ARS', due_day: 10, ...o });
@@ -22,9 +22,26 @@ assert.deepEqual(r.map((x) => x.left), [-14, 16]);
 const t = monthTotals(
   [p(), p({ id: 2, currency: 'USD', fee: 50 })],
   [{ project_id: 2, period: '2026-11', currency: 'USD', amount: '50.00' }],
+  [{ project_id: 1, spent_on: '2026-11-03', currency: 'ARS', amount: '30' }, { project_id: 1, spent_on: '2026-10-03', currency: 'ARS', amount: '999' }],
   today,
 );
-assert.deepEqual(t, { USD: { cobrado: 50, pendiente: 0 }, ARS: { cobrado: 0, pendiente: 100 } });
+assert.deepEqual(t, { USD: { cobrado: 50, pendiente: 0, gastos: 0, ganancia: 50 }, ARS: { cobrado: 0, pendiente: 100, gastos: 30, ganancia: -30 } });
+
+// recibo anulado: el mes vuelve a quedar pendiente y no suma
+const voided = [{ project_id: 1, period: '2026-11', currency: 'ARS', amount: 100, voided_at: '2026-11-12T10:00:00Z' }];
+assert.equal(chargeStatus(p(), voided, today), 'vencido');
+assert.equal(monthTotals([p()], voided, [], today).ARS.cobrado, 0);
+
+assert.deepEqual(
+  projectTotals(1, [{ project_id: 1, currency: 'ARS', amount: 100 }, ...voided, { project_id: 2, currency: 'ARS', amount: 7 }], [{ project_id: 1, currency: 'ARS', amount: 40 }]),
+  { ARS: { cobrado: 100, pendiente: 0, gastos: 40, ganancia: 60 } },
+);
+
+assert.equal(adjustedFee(45000, 8.5), 48825);
+assert.equal(adjustedFee(45000, 8.5, 1000), 49000);
+assert.equal(adjustedFee(80, 10, 1), 88);
+
+assert.deepEqual(renewals([p({ next_adjust: '2026-11-25' })], today).map((x) => [x.label, x.left]), [['Ajuste de cuota', 10]]);
 
 assert.equal(receiptLabel(7), 'R-0007');
 assert.equal(receiptPath('u1', 'Panadería López S.A.', '2026-11-15', 12), 'u1/panaderia-lopez-s-a/2026/R-0012.pdf');

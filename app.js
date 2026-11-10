@@ -4,7 +4,7 @@ import * as L from './logic.js';
 
 const view = document.getElementById('view');
 const topBar = document.querySelector('.top');
-const S = { user: null, settings: null, projects: [], payments: [], filter: { project: '', month: '' } };
+const S = { user: null, settings: null, projects: [], payments: [], expenses: [], feeChanges: [], filter: { project: '', month: '' } };
 const pdfCache = new Map(); // payment id -> Blob, para que "Compartir" no espere la red
 
 const STATUS = { activo: 'Activo', desarrollo: 'En desarrollo', pausado: 'Pausado', finalizado: 'Finalizado' };
@@ -25,7 +25,7 @@ function toast(msg, bad = false) {
 }
 
 function errorText(e) {
-  if (e?.code === '23503') return 'Este proyecto tiene recibos y no se puede borrar. Marcalo como Finalizado.';
+  if (e?.code === '23503') return 'Este proyecto tiene recibos o gastos y no se puede borrar. Marcalo como Finalizado.';
   if (/Invalid login/i.test(e?.message)) return 'Email o contraseña incorrectos.';
   if (/fetch/i.test(e?.message)) return 'Sin conexión con el servidor. Revisá tu internet y probá de nuevo.';
   return e?.message || 'Algo salió mal. Probá de nuevo.';
@@ -50,14 +50,15 @@ if (SUPABASE_URL.includes('TU-PROYECTO')) {
 
 async function load() {
   // shortcut: trae todo de una (Supabase corta en 1000 filas); paginar los pagos si se pasa de ~900 recibos.
-  const [settings, projects, payments] = await Promise.all([
+  const [settings, projects, payments, expenses, feeChanges] = await Promise.all([
     q(sb.from('settings').select('*').maybeSingle()),
     q(sb.from('projects').select('*').order('name')),
     q(sb.from('payments').select('*').order('receipt_no', { ascending: false })),
+    q(sb.from('expenses').select('*').order('spent_on', { ascending: false })),
+    q(sb.from('fee_changes').select('*').order('changed_at', { ascending: false })),
   ]);
   S.settings = settings ?? (await q(sb.from('settings').insert({}).select().single()));
-  S.projects = projects;
-  S.payments = payments;
+  Object.assign(S, { projects, payments, expenses, feeChanges });
   topBar.hidden = false;
   route();
 }
@@ -76,8 +77,8 @@ function renderLogin() {
 
 // ---------- Rutas ----------
 
-const TAB = { proyecto: 'proyectos', nuevo: 'proyectos', editar: 'proyectos', pago: 'proyectos', recibo: 'recibos' };
-const routes = { panel, proyectos, proyecto, nuevo: () => projectForm(), editar: (id) => projectForm(byId(id)), pago: payForm, recibos, recibo, ajustes };
+const TAB = { proyecto: 'proyectos', nuevo: 'proyectos', editar: 'proyectos', pago: 'proyectos', aumento: 'proyectos', recibo: 'recibos' };
+const routes = { panel, proyectos, proyecto, nuevo: () => projectForm(), editar: (id) => projectForm(byId(id)), pago: payForm, aumento, recibos, recibo, ajustes };
 
 function route() {
   if (!S.user || !S.settings) return;
@@ -102,14 +103,25 @@ const dueText = (p, s, today) => {
 };
 const leftText = (n) => n === 0 ? 'hoy' : n > 0 ? `en ${n} día${n > 1 ? 's' : ''}` : `venció hace ${-n} día${n < -1 ? 's' : ''}`;
 const empty = (title, text, action = '') => `<div class="empty"><p class="empty-title">${title}</p><p class="muted">${text}</p>${action}</div>`;
+// timestamptz → fecha local (slice(0, 10) daría el día UTC, que de noche en Argentina ya es mañana)
+const stampLabel = (ts) => new Date(ts).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' });
+const curOptions = (cur) => ['ARS', 'USD'].map((c) => `<option ${c === cur ? 'selected' : ''}>${c}</option>`).join('');
+
+const LABEL = { cobrado: 'Cobrado', pendiente: 'Pendiente', gastos: 'Gastos', ganancia: 'Ganancia' };
+const CUR = { ARS: 'Pesos', USD: 'Dólares' };
+const totalsBlock = (totals, keys) => Object.entries(totals).map(([c, v]) => `
+  <div class="totals">
+    <p class="cur">${CUR[c]}</p>
+    <dl>${keys.map((k) => `<div><dt>${LABEL[k]}</dt><dd class="${k === 'pendiente' && v[k] ? 'pending' : ''}${k === 'ganancia' && v[k] < 0 ? 'neg' : ''}">${L.money(v[k], c)}</dd></div>`).join('')}</dl>
+  </div>`).join('');
 
 function receiptRow(x) {
   const p = byId(x.project_id);
   return `<li><a class="row" href="#/recibo/${x.id}">
     <span class="num">${L.receiptLabel(x.receipt_no)}</span>
     <span class="row-main"><span class="title">${esc(p?.name ?? 'Proyecto borrado')}</span><span class="sub">${esc(L.periodLabel(x.period))} · ${esc(L.dateLabel(x.paid_on))}</span></span>
-    <span class="amount">${L.money(x.amount, x.currency)}</span>
-    ${x.pdf_path ? '' : badge('warn', 'Sin PDF')}
+    <span class="amount ${x.voided_at ? 'voided' : ''}">${L.money(x.amount, x.currency)}</span>
+    ${x.voided_at ? badge('bad', 'Anulado') : x.pdf_path ? '' : badge('warn', 'Sin PDF')}
   </a></li>`;
 }
 
@@ -122,7 +134,7 @@ function panel() {
     .filter((x) => x.s === 'pendiente' || x.s === 'vencido')
     .sort((a, b) => (a.s === 'vencido' ? -1 : 0) - (b.s === 'vencido' ? -1 : 0) || (a.p.due_day ?? 99) - (b.p.due_day ?? 99));
   const ren = L.renewals(S.projects, today);
-  const totals = Object.entries(L.monthTotals(S.projects, S.payments, today));
+  const totals = L.monthTotals(S.projects, S.payments, S.expenses, today);
 
   if (!S.projects.length) {
     return `<h1>Panel</h1>${empty('Todavía no cargaste proyectos', 'Cargá tus webs y apps con su cuota y fechas, y acá vas a ver qué cobrar y qué renovar cada mes.', '<a class="btn primary" href="#/nuevo">Nuevo proyecto</a>')}`;
@@ -130,9 +142,7 @@ function panel() {
   return `
     <div class="head"><h1>${cap(L.periodLabel(L.period(today)))}</h1></div>
     ${S.settings.name ? '' : `<p class="notice">Completá tus datos en <a href="#/ajustes">Ajustes</a> para que salgan en los recibos.</p>`}
-    ${totals.length ? `<dl class="totals">${totals.map(([c, t]) => `
-      <div><dt>${c} cobrado</dt><dd>${L.money(t.cobrado, c)}</dd></div>
-      <div><dt>${c} pendiente</dt><dd class="${t.pendiente ? 'pending' : ''}">${L.money(t.pendiente, c)}</dd></div>`).join('')}</dl>` : ''}
+    ${totalsBlock(totals, ['cobrado', 'pendiente', 'gastos', 'ganancia'])}
 
     <section>
       <h2>Para cobrar</h2>
@@ -160,7 +170,7 @@ function proyectos() {
   const list = [...S.projects].sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status) || a.name.localeCompare(b.name, 'es'));
   const today = new Date();
   return `
-    <div class="head"><h1>Proyectos</h1><a class="btn primary" href="#/nuevo">Nuevo proyecto</a></div>
+    <div class="head"><h1>Proyectos</h1><div class="actions"><a class="btn" href="#/aumento">Aumento de cuotas</a><a class="btn primary" href="#/nuevo">Nuevo proyecto</a></div></div>
     ${list.length ? `<ul class="list">${list.map((p) => {
       const s = L.chargeStatus(p, S.payments, today);
       return `<li><a class="row" href="#/proyecto/${p.id}">
@@ -175,6 +185,9 @@ function proyecto(id) {
   const p = byId(id);
   if (!p) return empty('No encontramos ese proyecto', 'Puede que se haya borrado.', '<a class="btn" href="#/proyectos">Ver proyectos</a>');
   const pays = S.payments.filter((x) => x.project_id === p.id);
+  const exps = S.expenses.filter((x) => x.project_id === p.id);
+  const fees = S.feeChanges.filter((x) => x.project_id === p.id);
+  const totals = L.projectTotals(p.id, S.payments, S.expenses);
   const safeUrl = /^https?:\/\//i.test(p.url) ? p.url : '';
   const row = (k, v) => v ? `<div><dt>${k}</dt><dd>${v}</dd></div>` : '';
   return `
@@ -193,12 +206,83 @@ function proyecto(id) {
       ${row('Inicio', p.start_date && esc(L.dateLabel(p.start_date)))}
       ${row('Renovación dominio', p.domain_renewal && esc(L.dateLabel(p.domain_renewal)))}
       ${row('Renovación hosting', p.hosting_renewal && esc(L.dateLabel(p.hosting_renewal)))}
+      ${row('Próximo ajuste de cuota', p.next_adjust && esc(L.dateLabel(p.next_adjust)))}
     </dl>
     ${p.notes ? `<section><h2>Notas</h2><p class="notes">${esc(p.notes)}</p></section>` : ''}
+    ${Object.keys(totals).length ? `<section><h2>Balance del proyecto</h2>${totalsBlock(totals, ['cobrado', 'gastos', 'ganancia'])}</section>` : ''}
+
+    <section>
+      <h2>Contrato</h2>
+      <div class="calm contract">
+        ${p.contract_path ? `<div class="actions"><button class="btn" data-act="open-contract" data-id="${p.id}">Ver contrato</button><button class="btn danger" data-act="remove-contract" data-id="${p.id}">Quitar</button></div>` : ''}
+        <form class="upload" data-form="contract" data-id="${p.id}">
+          <label>${p.contract_path ? 'Reemplazar por otro PDF' : 'PDF del contrato'}<input name="file" type="file" accept="application/pdf" required></label>
+          <button class="btn primary">${p.contract_path ? 'Reemplazar' : 'Subir contrato'}</button>
+        </form>
+      </div>
+    </section>
+
     <section>
       <h2>Pagos</h2>
       ${pays.length ? `<ul class="list">${pays.map(receiptRow).join('')}</ul>` : `<p class="muted calm">Todavía no hay pagos registrados.</p>`}
-    </section>`;
+    </section>
+
+    <section>
+      <div class="section-head"><h2>Gastos</h2>
+        <details class="add"><summary class="btn sm">Agregar gasto</summary>
+          <form class="form inline" data-form="expense" data-id="${p.id}">
+            <label>Concepto<input name="concept" required maxlength="120" placeholder="Hosting, dominio, licencia…"></label>
+            <label>Monto<input name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" required></label>
+            <label>Moneda<select name="currency">${curOptions(p.currency)}</select></label>
+            <label>Fecha<input name="spent_on" type="date" value="${L.isoDate(new Date())}" required></label>
+            <div class="form-actions"><button class="btn primary">Guardar gasto</button></div>
+          </form>
+        </details>
+      </div>
+      ${exps.length ? `<ul class="list">${exps.map((e) => `
+        <li class="row">
+          <span class="row-main"><span class="title">${esc(e.concept)}</span><span class="sub">${esc(L.dateLabel(e.spent_on))}</span></span>
+          <span class="amount">${L.money(e.amount, e.currency)}</span>
+          <button class="btn sm ghost" data-act="delete-expense" data-id="${e.id}" aria-label="Borrar gasto ${esc(e.concept)}">Borrar</button>
+        </li>`).join('')}</ul>` : `<p class="muted calm">Sin gastos cargados. Sumá lo que pagás vos (dominio, hosting, licencias) para ver la ganancia real.</p>`}
+    </section>
+
+    ${fees.length ? `<section><h2>Historial de cuota</h2><ul class="list">${fees.map((f) => `
+      <li class="row">
+        <span class="row-main"><span class="title">${L.money(f.old_fee, p.currency)} → ${L.money(f.new_fee, p.currency)}</span><span class="sub">${esc(stampLabel(f.changed_at))}</span></span>
+        ${f.old_fee > 0 ? badge('neutral', `${f.new_fee >= f.old_fee ? '+' : ''}${((f.new_fee / f.old_fee - 1) * 100).toLocaleString('es-AR', { maximumFractionDigits: 1 })}%`) : ''}
+      </li>`).join('')}</ul></section>` : ''}`;
+}
+
+function aumento() {
+  const list = S.projects.filter((p) => p.status === 'activo' && p.fee > 0).sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  if (!list.length) return `<a class="back" href="#/proyectos">Proyectos</a>${empty('No hay cuotas para ajustar', 'El aumento aplica a proyectos activos con cuota mensual.')}`;
+  return `
+    <a class="back" href="#/proyectos">Proyectos</a>
+    <h1>Aumento de cuotas</h1>
+    <p class="muted">Sube la cuota de los proyectos que elijas. Cada cambio queda en el historial del proyecto.</p>
+    <form class="form narrow" data-form="adjust">
+      <label>Aumento (%)<input name="percent" type="number" step="0.1" min="0.1" max="1000" inputmode="decimal" required autofocus></label>
+      <label>Redondear las cuotas en pesos a<select name="round"><option value="0.01">Sin redondeo</option><option value="100" selected>$ 100</option><option value="1000">$ 1.000</option></select></label>
+      <fieldset class="checks"><legend>Proyectos</legend>
+        ${list.map((p) => `
+        <label class="check"><input type="checkbox" name="ids" value="${p.id}" ${p.currency === 'ARS' ? 'checked' : ''}>
+          <span class="row-main"><span class="title">${esc(p.name)}</span><span class="sub" data-preview="${p.id}">${L.money(p.fee, p.currency)}</span></span>
+        </label>`).join('')}
+      </fieldset>
+      <div class="form-actions"><button class="btn primary">Aplicar aumento</button></div>
+    </form>`;
+}
+
+// Vista previa del aumento: actual → nueva, sin re-renderizar (mantiene el foco).
+function updatePreview(form) {
+  const percent = Number(form.percent.value) || 0;
+  for (const box of form.querySelectorAll('[name=ids]')) {
+    const p = byId(box.value);
+    const next = L.adjustedFee(p.fee, percent, p.currency === 'ARS' ? Number(form.round.value) : 0.01);
+    form.querySelector(`[data-preview="${p.id}"]`).textContent = box.checked && percent
+      ? `${L.money(p.fee, p.currency)} → ${L.money(next, p.currency)}` : L.money(p.fee, p.currency);
+  }
 }
 
 function projectForm(p) {
@@ -229,6 +313,7 @@ function projectForm(p) {
         ${f('start_date', 'Inicio', 'date')}
         ${f('domain_renewal', 'Renovación del dominio', 'date')}
         ${f('hosting_renewal', 'Renovación del hosting', 'date')}
+        ${f('next_adjust', 'Próximo ajuste de cuota', 'date')}
       </fieldset>
       <label class="wide">Notas<textarea name="notes" rows="4">${esc(v.notes)}</textarea></label>
       <div class="form-actions">
@@ -278,7 +363,8 @@ function recibo(id) {
   const p = byId(x.project_id);
   return `
     <a class="back" href="#/recibos">Recibos</a>
-    <div class="head"><h1>Recibo ${L.receiptLabel(x.receipt_no)}</h1></div>
+    <div class="head"><h1>Recibo ${L.receiptLabel(x.receipt_no)} ${x.voided_at ? badge('bad', 'Anulado') : ''}</h1></div>
+    ${x.voided_at ? `<p class="notice bad">Anulado el ${esc(stampLabel(x.voided_at))}${x.void_reason ? `: ${esc(x.void_reason)}` : ''}. No cuenta como cobro y el número no se vuelve a usar.</p>` : ''}
     <dl class="details">
       <div><dt>Proyecto</dt><dd><a href="#/proyecto/${p?.id}">${esc(p?.name ?? '—')}</a></dd></div>
       <div><dt>Cliente</dt><dd>${esc(p?.client || '—')}</dd></div>
@@ -289,9 +375,18 @@ function recibo(id) {
     </dl>
     <div class="actions">
       ${x.pdf_path
-        ? `<button class="btn primary" data-act="share" data-id="${x.id}">Compartir</button><button class="btn" data-act="open" data-id="${x.id}">Ver PDF</button>`
+        ? `<button class="btn ${x.voided_at ? '' : 'primary'}" data-act="share" data-id="${x.id}">Compartir</button><button class="btn" data-act="open" data-id="${x.id}">Ver PDF</button>`
         : `<p class="notice">El pago quedó registrado pero el PDF no se pudo guardar.</p><button class="btn primary" data-act="make-pdf" data-id="${x.id}">Generar PDF</button>`}
-    </div>`;
+    </div>
+    ${x.voided_at ? '' : `
+    <details class="add void">
+      <summary class="btn sm ghost">Anular recibo</summary>
+      <form class="form inline" data-form="void" data-id="${x.id}">
+        <label class="wide">Motivo<input name="reason" required maxlength="200" placeholder="Ej.: importe mal cargado"></label>
+        <p class="muted small wide">El recibo queda marcado como ANULADO, el mes vuelve a figurar pendiente y no se puede deshacer.</p>
+        <div class="form-actions"><button class="btn primary danger">Anular recibo</button></div>
+      </form>
+    </details>`}`;
 }
 
 function ajustes() {
@@ -346,12 +441,15 @@ const submit = {
       fee: Number(row.fee || 0),
       due_day: row.due_day ? Number(row.due_day) : null,
       start_date: toNull(row.start_date), domain_renewal: toNull(row.domain_renewal), hosting_renewal: toNull(row.hosting_renewal),
+      next_adjust: toNull(row.next_adjust),
     });
+    const old = byId(form.dataset.id);
     const id = Number(form.dataset.id);
     const saved = id
       ? await q(sb.from('projects').update(row).eq('id', id).select().single())
       : await q(sb.from('projects').insert(row).select().single());
     S.projects = [...S.projects.filter((p) => p.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    if (old && Number(old.fee) !== Number(saved.fee)) await reloadFeeChanges(); // el trigger registró el cambio
     toast('Proyecto guardado');
     location.hash = `#/proyecto/${saved.id}`;
   },
@@ -366,6 +464,55 @@ const submit = {
     S.settings.next_receipt = pay.receipt_no + 1;
     await savePdf(pay).catch((e) => toast('Pago registrado, pero falló el PDF: ' + errorText(e), true));
     location.hash = `#/recibo/${pay.id}`;
+  },
+
+  async expense(fd, form) {
+    const e = await q(sb.from('expenses').insert({
+      project_id: Number(form.dataset.id), concept: fd.get('concept').trim(),
+      amount: Number(fd.get('amount')), currency: fd.get('currency'), spent_on: fd.get('spent_on'),
+    }).select().single());
+    S.expenses = [e, ...S.expenses].sort((a, b) => b.spent_on.localeCompare(a.spent_on));
+    toast('Gasto guardado');
+    route();
+  },
+
+  async void(fd, form) {
+    const x = payById(form.dataset.id);
+    if (!confirm(`¿Anular el recibo ${L.receiptLabel(x.receipt_no)}? No se puede deshacer.`)) return;
+    Object.assign(x, await q(sb.from('payments')
+      .update({ voided_at: new Date().toISOString(), void_reason: fd.get('reason').trim() })
+      .eq('id', x.id).select().single()));
+    await savePdf(x).catch((e) => toast('Recibo anulado, pero no se pudo regenerar el PDF: ' + errorText(e), true));
+    toast('Recibo anulado');
+    route();
+  },
+
+  async contract(fd, form) {
+    const file = fd.get('file');
+    if (file.type !== 'application/pdf') throw new Error('El contrato tiene que ser un PDF.');
+    if (file.size > 10e6) throw new Error('El PDF pesa más de 10 MB.');
+    const p = byId(form.dataset.id);
+    const path = `${S.user.id}/contratos/${p.id}.pdf`;
+    await q(sb.storage.from('recibos').upload(path, file, { upsert: true, contentType: 'application/pdf' }));
+    Object.assign(p, await q(sb.from('projects').update({ contract_path: path }).eq('id', p.id).select().single()));
+    toast('Contrato guardado');
+    route();
+  },
+
+  async adjust(fd) {
+    const percent = Number(fd.get('percent'));
+    const chosen = fd.getAll('ids').map(byId);
+    if (!chosen.length) throw new Error('Elegí al menos un proyecto.');
+    // el redondeo es para pesos: US$ 80 no debería saltar a US$ 100
+    for (const [cur, round] of [['ARS', Number(fd.get('round'))], ['USD', 0.01]]) {
+      const ids = chosen.filter((p) => p.currency === cur).map((p) => p.id);
+      if (!ids.length) continue;
+      const updated = await q(sb.rpc('adjust_fees', { p_projects: ids, p_percent: percent, p_round: round }));
+      for (const u of updated) Object.assign(byId(u.id), u);
+    }
+    await reloadFeeChanges();
+    toast(`Cuotas actualizadas (${chosen.length})`);
+    location.hash = '#/proyectos';
   },
 
   async settings(fd) {
@@ -420,10 +567,30 @@ const actions = {
     logoCache = null;
     route();
   },
+  async 'delete-expense'(el) {
+    const e = S.expenses.find((x) => x.id === Number(el.dataset.id));
+    if (!confirm(`¿Borrar el gasto "${e.concept}"?`)) return;
+    await q(sb.from('expenses').delete().eq('id', e.id));
+    S.expenses = S.expenses.filter((x) => x.id !== e.id);
+    route();
+  },
+  async 'open-contract'(el) {
+    const w = window.open('', '_blank');
+    const blob = await q(sb.storage.from('recibos').download(byId(el.dataset.id).contract_path));
+    const url = URL.createObjectURL(blob);
+    w ? (w.location = url) : (location.href = url);
+  },
+  async 'remove-contract'(el) {
+    const p = byId(el.dataset.id);
+    if (!confirm('¿Quitar el contrato de este proyecto? Se borra el PDF.')) return;
+    await q(sb.storage.from('recibos').remove([p.contract_path]));
+    Object.assign(p, await q(sb.from('projects').update({ contract_path: null }).eq('id', p.id).select().single()));
+    route();
+  },
   'clear-filter'() { S.filter = { project: '', month: '' }; route(); },
   async logout() {
     await sb.auth.signOut();
-    Object.assign(S, { settings: null, projects: [], payments: [] });
+    Object.assign(S, { settings: null, projects: [], payments: [], expenses: [], feeChanges: [] });
     pdfCache.clear();
     location.hash = '';
   },
@@ -451,6 +618,14 @@ view.addEventListener('click', async (e) => {
   el.disabled = true;
   try { await actions[el.dataset.act](el); } catch (err) { toast(errorText(err), true); } finally { el.disabled = false; }
 });
+
+view.addEventListener('input', (e) => {
+  if (e.target.form?.dataset.form === 'adjust') updatePreview(e.target.form);
+});
+
+const reloadFeeChanges = async () => {
+  S.feeChanges = await q(sb.from('fee_changes').select('*').order('changed_at', { ascending: false }));
+};
 
 view.addEventListener('change', (e) => {
   if (e.target.hasAttribute('data-theme-pick')) {
@@ -539,6 +714,20 @@ async function makePdf(x) {
   const sy = 180;
   doc.setDrawColor(...gray).line(R - 56, sy, R, sy);
   doc.setFont('helvetica', 'normal').setFontSize(8.5).setTextColor(...gray).text(s.name || 'Firma', R - 28, sy + 5, { align: 'center' });
+
+  if (x.voided_at) {
+    const red = [190, 30, 30];
+    doc.setTextColor(...red).setFont('helvetica', 'bold').setFontSize(9)
+      .text(doc.splitTextToSize(`ANULADO el ${new Date(x.voided_at).toLocaleDateString('es-AR')}${x.void_reason ? ` — ${x.void_reason}` : ''}`, R - M), M, y + 12);
+    // sello diagonal centrado: jsPDF rota desde el punto de inicio, así que se corre medio ancho
+    const a = 28 * Math.PI / 180;
+    doc.saveGraphicsState();
+    doc.setGState(new doc.GState({ opacity: 0.22 }));
+    doc.setFontSize(64);
+    const w = doc.getTextWidth('ANULADO');
+    doc.text('ANULADO', W / 2 - (w / 2) * Math.cos(a), 105 + (w / 2) * Math.sin(a), { angle: 28 });
+    doc.restoreGraphicsState();
+  }
   return doc.output('blob');
 }
 

@@ -22,21 +22,23 @@ export const dueDate = (dueDay, today) => {
   return new Date(today.getFullYear(), today.getMonth(), Math.min(dueDay, last));
 };
 
+const live = (payments) => payments.filter((x) => !x.voided_at); // los anulados no cuentan como cobro
+
 // Estado del cobro del mes actual: null si el proyecto no cobra cuota.
 export function chargeStatus(project, payments, today) {
   if (project.status !== 'activo' || !(project.fee > 0)) return null;
   const p = period(today);
-  if (payments.some((x) => x.project_id === project.id && x.period === p)) return 'cobrado';
+  if (live(payments).some((x) => x.project_id === project.id && x.period === p)) return 'cobrado';
   if (!project.due_day) return 'pendiente';
   return today.getDate() > dueDate(project.due_day, today).getDate() ? 'vencido' : 'pendiente';
 }
 
-// Renovaciones vencidas o dentro de `days` días, de la más urgente a la menos.
+// Renovaciones y ajustes de cuota vencidos o dentro de `days` días, de lo más urgente a lo menos.
 export function renewals(projects, today, days = 30) {
   const out = [];
   for (const p of projects) {
     if (p.status === 'finalizado') continue;
-    for (const [field, label] of [['domain_renewal', 'Dominio'], ['hosting_renewal', 'Hosting']]) {
+    for (const [field, label] of [['domain_renewal', 'Dominio'], ['hosting_renewal', 'Hosting'], ['next_adjust', 'Ajuste de cuota']]) {
       if (!p[field]) continue;
       const left = daysUntil(p[field], today);
       if (left <= days) out.push({ project: p, label, date: p[field], left });
@@ -45,18 +47,32 @@ export function renewals(projects, today, days = 30) {
   return out.sort((a, b) => a.left - b.left);
 }
 
-// Totales del mes por moneda: cobrado y pendiente.
-export function monthTotals(projects, payments, today) {
+const bucket = (t, cur) => (t[cur] ??= { cobrado: 0, pendiente: 0, gastos: 0, ganancia: 0 });
+const withProfit = (t) => { for (const v of Object.values(t)) v.ganancia = v.cobrado - v.gastos; return t; };
+
+// Totales del mes por moneda: cobrado, pendiente, gastos y ganancia.
+export function monthTotals(projects, payments, expenses, today) {
   const t = {};
-  const add = (cur, key, n) => { t[cur] ??= { cobrado: 0, pendiente: 0 }; t[cur][key] += Number(n); };
   const p = period(today);
-  for (const x of payments) if (x.period === p) add(x.currency, 'cobrado', x.amount);
+  for (const x of live(payments)) if (x.period === p) bucket(t, x.currency).cobrado += Number(x.amount);
+  for (const e of expenses) if (e.spent_on.startsWith(p)) bucket(t, e.currency).gastos += Number(e.amount);
   for (const pr of projects) {
     const s = chargeStatus(pr, payments, today);
-    if (s === 'pendiente' || s === 'vencido') add(pr.currency, 'pendiente', pr.fee);
+    if (s === 'pendiente' || s === 'vencido') bucket(t, pr.currency).pendiente += Number(pr.fee);
   }
-  return t;
+  return withProfit(t);
 }
+
+// Totales históricos de un proyecto por moneda.
+export function projectTotals(projectId, payments, expenses) {
+  const t = {};
+  for (const x of live(payments)) if (x.project_id === projectId) bucket(t, x.currency).cobrado += Number(x.amount);
+  for (const e of expenses) if (e.project_id === projectId) bucket(t, e.currency).gastos += Number(e.amount);
+  return withProfit(t);
+}
+
+// Misma fórmula que adjust_fees en SQL (redondeo al múltiplo de `round`).
+export const adjustedFee = (fee, percent, round = 1) => Math.round((fee * (1 + percent / 100)) / round) * round;
 
 // Ruta del PDF en Storage: la policy exige que empiece con el id del usuario.
 export const slug = (s) => (s || 'sin-cliente').normalize('NFD').replace(/[̀-ͯ]/g, '')
