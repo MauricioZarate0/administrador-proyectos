@@ -34,7 +34,8 @@ Bitácora del proyecto. Se actualiza al cerrar cada tarea.
 - 2026-11-09: ícono opcional por proyecto (96px, data URL en `projects.icon`, migración `004`; sin ícono se muestra la inicial) y cuadro del dólar MEP arriba a la derecha (dolarapi.com `/v1/dolares/bolsa`, se consulta al abrir/iniciar sesión y al tocarlo).
 
 ## Pendiente del dueño (manual)
-- **Correr `supabase/migrations/003_…sql` y `004_icono_proyecto.sql`** y después pushear los commits locales (no se subieron para no romper la app publicada).
+- Migraciones 003 y 004 aplicadas y verificadas (2026-11-09); todo publicado (commit 65f82fd). La 002 no se puede verificar con la clave anónima: si guardar un tipo nuevo falla, correrla.
+- Primer uso real: login, Ajustes, cargar proyectos, probar un pago y "Compartir" en el celu.
 - **Correr `supabase/migrations/002_tipo_libre.sql`** en el SQL Editor (sin esto, guardar un tipo nuevo falla).
 - Primer login real, completar Ajustes, cargar proyectos, probar un pago y "Compartir" en el celu.
 
