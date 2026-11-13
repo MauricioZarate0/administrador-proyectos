@@ -22,7 +22,7 @@ Bitácora del proyecto. Se actualiza al cerrar cada tarea.
 ## Publicación
 - Repo público: https://github.com/MauricioZarate0/administrador-proyectos (rama `main`).
 - **Cloudflare Pages** (desde 2026-11-12): proyecto `administrador-proyectos`, conectado al repo, rama `main`, sin build, output `/`. Cada push se publica solo en https://administrador-proyectos.pages.dev. Sirve con `max-age=0, must-revalidate` y redirige `/index.html` → `/`.
-- Antes estaba en GitHub Pages (https://mauriciozarate0.github.io/administrador-proyectos/). Se migró a pedido del dueño; cambiar de dirección obliga a reinstalar la app y volver a iniciar sesión (tema y permiso de emergentes se reinician).
+- Antes estaba en GitHub Pages (https://mauriciozarate0.github.io/administrador-proyectos/), **apagado el 2026-11-12** a pedido del dueño. Se migró a pedido del dueño; cambiar de dirección obliga a reinstalar la app y volver a iniciar sesión (tema y permiso de emergentes se reinician).
 - `logo-animado/` es una carpeta aparte del dueño: quedó fuera del repo (.gitignore) hasta que confirme si va.
 
 - Supabase conectado (2026-11-09): proyecto `bzfmtrawqzqgsyfrxwjy`, schema cargado, registros cerrados (verificado: signup_disabled). La app publicada muestra el login sin errores.
