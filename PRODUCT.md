@@ -7,7 +7,7 @@
 web
 
 ## Stack
-PWA estática en vanilla JS sin build + Supabase (Postgres, Auth, Storage), alojada en GitHub Pages. Elegido con el dueño: uso en PC y celular desde cualquier lugar.
+PWA estática en vanilla JS sin build + Supabase (Postgres, Auth, Storage), alojada en Cloudflare Pages (antes GitHub Pages). Elegido con el dueño: uso en PC y celular desde cualquier lugar.
 
 ## Users
 Un solo usuario: el dueño, desarrollador freelance en Argentina que mantiene webs y apps de clientes y cobra una cuota mensual por cada una. Lo usa en la PC mientras trabaja y en el celular cuando un cliente le paga (registrar el pago y mandarle el recibo en el momento).

@@ -17,10 +17,11 @@ python -m http.server 8080
 ```
 Abrí http://localhost:8080 e ingresá con tu email y contraseña. Primero completá **Ajustes** (tus datos para los recibos).
 
-### 3. Publicar (GitHub Pages, gratis)
+### 3. Publicar (Cloudflare Pages, gratis)
 1. Subí esta carpeta a un repo de GitHub.
-2. Repo → **Settings → Pages** → Source: *Deploy from a branch* → `main` / root → Save.
-3. Queda en `https://<usuario>.github.io/<repo>/`.
+2. Cloudflare → **Workers & Pages → Create → Pages → Import an existing Git repository** → elegí el repo.
+3. Framework preset *None*, sin build command, output `/`, rama `main` → **Save and Deploy**.
+4. Queda en `https://<proyecto>.pages.dev` y cada push a `main` se publica solo.
 
 ### 4. Instalar en el celular
 - **Android (Chrome)**: abrí la URL → menú ⋮ → *Instalar app*.

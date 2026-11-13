@@ -11,7 +11,7 @@ App personal para administrar webs/apps de clientes: estado de cada proyecto, fe
 - **PWA estática en vanilla JS, sin build.** `index.html`, `app.js`, `logic.js`, `styles.css`, `sw.js`, `manifest.webmanifest`.
 - **Supabase**: Postgres + Auth (email/contraseña) + Storage (bucket privado `recibos`). Esquema completo en `supabase/schema.sql`.
 - Librerías por CDN con **versión exacta** (nunca `@latest` ni `@2`): supabase-js (jsdelivr ESM) y jsPDF (cdnjs).
-- Hosting: GitHub Pages. `config.js` tiene URL y clave `anon` de Supabase (pública por diseño; la seguridad es RLS).
+- Hosting: Cloudflare Pages conectado al repo (cada push a `main` se publica en https://administrador-proyectos.pages.dev). `config.js` tiene URL y clave `anon` de Supabase (pública por diseño; la seguridad es RLS).
 
 ## Correr local
 ```bash

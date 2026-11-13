@@ -12,7 +12,7 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   e.respondWith(
-    // no-cache: GitHub Pages manda max-age=600 y sin esto los cambios tardan 10 min en llegar
+    // no-cache: revalida siempre, así un deploy nuevo llega aunque el hosting mande max-age (GitHub Pages mandaba 600)
     fetch(e.request, { cache: 'no-cache' }).then((res) => {
       const copy = res.clone();
       caches.open(CACHE).then((c) => c.put(e.request, copy));
