@@ -2,3 +2,6 @@ node_modules/
 .claude/settings.local.json
 # carpeta aparte del dueño, no es parte de la app
 logo-animado/
+# respaldos y datos exportados: tienen datos de clientes, nunca al repo público
+respaldo-*.json
+migracion/

@@ -555,6 +555,11 @@ function ajustes() {
       </div>
       <p class="muted small">Automático sigue el modo del celular o la PC. Se guarda en este dispositivo.</p>
     </section>
+    <section>
+      <h2>Respaldo</h2>
+      <p class="muted small">Baja un archivo con todos tus datos y los PDF (recibos, contratos, logo). Guardalo en un lugar seguro: tiene datos de tus clientes.</p>
+      <button class="btn" data-act="export">Exportar todo</button>
+    </section>
     <section class="account">
       <h2>Cuenta</h2>
       <p class="muted">${esc(S.user.email)}</p>
@@ -774,6 +779,21 @@ const actions = {
     toast('Suscripción borrada');
     location.hash = '#/suscripciones';
   },
+  async export(el) {
+    const label = el.textContent;
+    el.textContent = 'Exportando…';
+    try {
+      const backup = await exportAll();
+      const n = Object.values(backup.tables).reduce((a, t) => a + t.length, 0);
+      const a = Object.assign(document.createElement('a'), {
+        href: URL.createObjectURL(new Blob([JSON.stringify(backup)], { type: 'application/json' })),
+        download: `respaldo-proyectos-${L.isoDate(new Date())}.json`,
+      });
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 6e4);
+      toast(`Respaldo listo: ${n} registros y ${Object.keys(backup.files).length} archivos`);
+    } finally { el.textContent = label; }
+  },
   'clear-filter'() { S.filter = { project: '', month: '' }; route(); },
   async logout() {
     await sb.auth.signOut();
@@ -847,6 +867,37 @@ async function toggleTask(box) {
     box.disabled = false;
     toast(errorText(err), true);
   }
+}
+
+// ---------- Respaldo ----------
+
+// Todo desde la base (no del estado cargado) y paginado: Supabase devuelve como mucho 1000 filas por consulta.
+// Si falta cualquier archivo, falla entero: un respaldo incompleto no sirve para mudar los datos.
+async function exportAll() {
+  const TABLES = ['settings', 'projects', 'payments', 'expenses', 'fee_changes', 'tasks', 'subscriptions'];
+  const all = async (t) => {
+    const rows = [];
+    for (let i = 0; ; i += 1000) {
+      const page = await q(sb.from(t).select('*').order(t === 'settings' ? 'user_id' : 'id').range(i, i + 999));
+      rows.push(...page);
+      if (page.length < 1000) return rows;
+    }
+  };
+  const tables = Object.fromEntries(await Promise.all(TABLES.map(async (t) => [t, await all(t)])));
+  const paths = [...new Set([
+    ...tables.payments.map((x) => x.pdf_path), ...tables.projects.map((x) => x.contract_path), ...tables.settings.map((x) => x.logo_path),
+  ].filter(Boolean))];
+  const files = {};
+  for (const path of paths) {
+    try {
+      const blob = await q(sb.storage.from('recibos').download(path));
+      const url = await new Promise((ok, fail) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = fail; r.readAsDataURL(blob); });
+      files[path] = { type: blob.type, size: blob.size, base64: url.slice(url.indexOf(',') + 1) };
+    } catch (e) {
+      throw new Error(`No se pudo bajar ${path}: ${errorText(e)}. El respaldo no se guardó.`);
+    }
+  }
+  return { app: 'administrador-proyectos', version: 1, exported_at: new Date().toISOString(), tables, files };
 }
 
 // ---------- PDF ----------
