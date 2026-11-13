@@ -14,7 +14,7 @@ OWNER_ID = ""      # id del dueño: prefijo de las rutas de archivos (el uid que
 [[d1_databases]]
 binding = "DB"
 database_name = "administrador-proyectos"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "c533a341-1cfc-4430-a5e7-42cd80758967"
 
 [[r2_buckets]]
 binding = "FILES"
@@ -29,7 +29,7 @@ OWNER_ID = ""
 [[env.preview.d1_databases]]
 binding = "DB"
 database_name = "administrador-proyectos-prueba"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "911f4a87-df00-4798-a1af-3e2314bd69fd"
 
 [[env.preview.r2_buckets]]
 binding = "FILES"
