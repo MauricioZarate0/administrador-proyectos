@@ -5,3 +5,6 @@ logo-animado/
 # respaldos y datos exportados: tienen datos de clientes, nunca al repo público
 respaldo-*.json
 migracion/
+# wrangler local
+.dev.vars
+.wrangler/

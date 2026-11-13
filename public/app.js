@@ -1,5 +1,4 @@
-import { createClient } from 'supabase';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
+import { createClient } from './api.js';
 import * as L from './logic.js';
 
 const view = document.getElementById('view');
@@ -35,23 +34,20 @@ function errorText(e) {
 
 // ---------- Arranque ----------
 
-let sb;
-if (SUPABASE_URL.includes('TU-PROYECTO')) {
-  view.innerHTML = `<div class="auth"><h1>Falta configurar</h1><p class="muted">Completá <code>config.js</code> con la URL y la clave de tu proyecto de Supabase. Los pasos están en el README.</p></div>`;
-} else {
-  sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// El login lo hace Cloudflare Access antes de servir la página; acá solo se pide quién es.
+const sb = createClient();
+{
   sb.auth.onAuthStateChange((_event, session) => {
     const user = session?.user ?? null;
     if (user?.id === S.user?.id && S.settings) return;
     S.user = user;
-    // fuera del callback: supabase-js se traba si se lo llama adentro
     setTimeout(() => (user ? load().catch((e) => toast(errorText(e), true)) : renderLogin()));
   });
   window.addEventListener('hashchange', route);
 }
 
 async function load() {
-  // shortcut: trae todo de una (Supabase corta en 1000 filas); paginar los pagos si se pasa de ~900 recibos.
+  // shortcut: trae todo de una; paginar los pagos si algún día son miles.
   const [settings, projects, payments, expenses, feeChanges, tasks, subscriptions] = await Promise.all([
     q(sb.from('settings').select('*').maybeSingle()),
     q(sb.from('projects').select('*').order('name')),
@@ -124,13 +120,11 @@ linksMenu.addEventListener('click', (e) => {
 function renderLogin() {
   topBar.hidden = true;
   view.innerHTML = `
-    <form class="auth" data-form="login">
+    <div class="auth">
       <h1>Proyectos</h1>
-      <p class="muted">Ingresá con tu cuenta.</p>
-      <label>Email<input name="email" type="email" autocomplete="email" required></label>
-      <label>Contraseña<input name="password" type="password" autocomplete="current-password" required></label>
-      <button class="btn primary">Ingresar</button>
-    </form>`;
+      <p class="muted">No se pudo verificar tu acceso. Si entraste con otro email, cerrá la sesión y volvé a ingresar con el tuyo.</p>
+      <a class="btn primary" href="/cdn-cgi/access/logout">Volver a ingresar</a>
+    </div>`;
 }
 
 // ---------- Rutas ----------
@@ -572,10 +566,6 @@ function ajustes() {
 const toNull = (v) => (v === '' ? null : v);
 
 const submit = {
-  async login(fd) {
-    await q(sb.auth.signInWithPassword({ email: fd.get('email'), password: fd.get('password') }));
-  },
-
   async project(fd, form) {
     const row = Object.fromEntries(fd);
     const iconFile = row.icon_file;
@@ -871,7 +861,7 @@ async function toggleTask(box) {
 
 // ---------- Respaldo ----------
 
-// Todo desde la base (no del estado cargado) y paginado: Supabase devuelve como mucho 1000 filas por consulta.
+// Todo desde la base (no del estado cargado) y paginado de a 1000 filas.
 // Si falta cualquier archivo, falla entero: un respaldo incompleto no sirve para mudar los datos.
 async function exportAll() {
   const TABLES = ['settings', 'projects', 'payments', 'expenses', 'fee_changes', 'tasks', 'subscriptions'];

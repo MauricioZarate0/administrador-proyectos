@@ -1,6 +1,6 @@
-// Cachea solo la interfaz (los datos siempre vienen de Supabase). Subir CACHE al cambiar archivos.
-const CACHE = 'proyectos-v9';
-const SHELL = ['./', 'index.html', 'app.js', 'logic.js', 'config.js', 'styles.css', 'manifest.webmanifest', 'icon.svg', 'icon-512.png'];
+// Cachea solo la interfaz (los datos siempre vienen de /api). Subir CACHE al cambiar archivos.
+const CACHE = 'proyectos-v10';
+const SHELL = ['./', 'index.html', 'app.js', 'logic.js', 'api.js', 'styles.css', 'manifest.webmanifest', 'icon.svg', 'icon-512.png'];
 
 self.addEventListener('install', (e) => e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())));
 self.addEventListener('activate', (e) => e.waitUntil(
@@ -10,7 +10,8 @@ self.addEventListener('activate', (e) => e.waitUntil(
 // Red primero para la interfaz (así los cambios llegan enseguida); caché si no hay conexión.
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
-  if (e.request.method !== 'GET' || url.origin !== location.origin) return;
+  // /api y /cdn-cgi (datos, archivos y login de Access) nunca se cachean
+  if (e.request.method !== 'GET' || url.origin !== location.origin || /^\/(api|cdn-cgi)\//.test(url.pathname)) return;
   e.respondWith(
     // no-cache: revalida siempre, así un deploy nuevo llega aunque el hosting mande max-age (GitHub Pages mandaba 600)
     fetch(e.request, { cache: 'no-cache' }).then((res) => {

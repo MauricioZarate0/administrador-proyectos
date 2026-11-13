@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chargeStatus, renewals, monthTotals, projectTotals, adjustedFee, receiptLabel, receiptPath, daysUntil, dueDate, period, addCycle, subscriptionRenewals, monthlyCost } from './logic.js';
+import { chargeStatus, renewals, monthTotals, projectTotals, adjustedFee, receiptLabel, receiptPath, daysUntil, dueDate, period, addCycle, subscriptionRenewals, monthlyCost } from './public/logic.js';
 
 const today = new Date(2026, 10, 15); // 15 nov 2026
 const p = (o) => ({ id: 1, status: 'activo', fee: 100, currency: 'ARS', due_day: 10, ...o });
