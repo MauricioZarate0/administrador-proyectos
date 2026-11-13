@@ -7,9 +7,9 @@ compatibility_date = "2025-06-01"
 
 # Producción (rama main)
 [vars]
-TEAM_DOMAIN = ""   # https://<equipo>.cloudflareaccess.com
-POLICY_AUD = ""    # Application Audience (AUD) Tag de la app de Access
-OWNER_ID = ""      # id del dueño: prefijo de las rutas de archivos (el uid que tenía en Supabase)
+TEAM_DOMAIN = "https://wandering-sunset-7da3.cloudflareaccess.com"   # https://<equipo>.cloudflareaccess.com
+POLICY_AUD = "b96a77421c851566541d4c0ad4f6150af0cc1625858b3579d4e5cf2d6ec0f750"    # Application Audience (AUD) Tag de la app de Access
+OWNER_ID = "1ce8a7d7-3bd7-4329-b87b-369ded436957"      # id del dueño: prefijo de las rutas de archivos (el uid que tenía en Supabase)
 
 [[d1_databases]]
 binding = "DB"
@@ -22,9 +22,9 @@ bucket_name = "administrador-proyectos"
 
 # Previews (otras ramas): base y bucket de prueba, para no tocar los datos reales
 [env.preview.vars]
-TEAM_DOMAIN = ""
-POLICY_AUD = ""
-OWNER_ID = ""
+TEAM_DOMAIN = "https://wandering-sunset-7da3.cloudflareaccess.com"
+POLICY_AUD = "417268e39113091b4a15e2ea0df18a531a62337a1a4940727baebe3e80f7476b"
+OWNER_ID = "1ce8a7d7-3bd7-4329-b87b-369ded436957"
 
 [[env.preview.d1_databases]]
 binding = "DB"

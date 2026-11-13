@@ -1,5 +1,5 @@
 // Cachea solo la interfaz (los datos siempre vienen de /api). Subir CACHE al cambiar archivos.
-const CACHE = 'proyectos-v10';
+const CACHE = 'proyectos-v11';
 const SHELL = ['./', 'index.html', 'app.js', 'logic.js', 'api.js', 'styles.css', 'manifest.webmanifest', 'icon.svg', 'icon-512.png'];
 
 self.addEventListener('install', (e) => e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())));

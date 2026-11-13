@@ -912,7 +912,12 @@ async function logoDataUrl() {
   if (!S.settings.logo_path) return null;
   if (!logoCache) {
     const blob = await q(sb.storage.from('recibos').download(S.settings.logo_path));
-    logoCache = await new Promise((ok, fail) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = fail; r.readAsDataURL(blob); });
+    // El logo ocupa ~48 mm en el PDF: 600 px alcanzan. Sin achicarlo, un PNG grande inflaba el recibo a ~17 MB.
+    const img = await createImageBitmap(blob);
+    const k = Math.min(1, 600 / img.width);
+    const c = Object.assign(document.createElement('canvas'), { width: Math.round(img.width * k), height: Math.round(img.height * k) });
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    logoCache = c.toDataURL('image/png');
   }
   return logoCache;
 }
@@ -930,7 +935,7 @@ async function makePdf(x) {
   if (logo) {
     const { width, height } = doc.getImageProperties(logo);
     const h = 14, w = Math.min(48, (h * width) / height);
-    doc.addImage(logo, M, y, w, (w * height) / width);
+    doc.addImage(logo, M, y, w, (w * height) / width, undefined, 'FAST'); // comprimido
     y += h + 4;
   }
   doc.setTextColor(...ink).setFont('helvetica', 'bold').setFontSize(12).text(s.name || ' ', M, y + 4);

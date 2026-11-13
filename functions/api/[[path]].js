@@ -173,10 +173,10 @@ async function files(env, method, key, request) {
     return new Response(obj.body, { headers: { 'content-type': obj.httpMetadata?.contentType ?? 'application/octet-stream', 'cache-control': 'no-store' } });
   }
   if (method === 'PUT') {
-    if (Number(request.headers.get('content-length') ?? 0) > 11e6) throw new HttpError(413, 'Archivo demasiado grande');
+    if (Number(request.headers.get('content-length') ?? 0) > 30e6) throw new HttpError(413, 'Archivo demasiado grande');
     const type = request.headers.get('content-type') ?? 'application/octet-stream';
     const body = await request.arrayBuffer();
-    if (body.byteLength > 11e6) throw new HttpError(413, 'Archivo demasiado grande');
+    if (body.byteLength > 30e6) throw new HttpError(413, 'Archivo demasiado grande');
     await env.FILES.put(key, body, { httpMetadata: { contentType: type } });
     return json({ path: key });
   }
