@@ -9,6 +9,7 @@ Bitácora del proyecto. Se actualiza al cerrar cada tarea.
 - **Numeración de recibos con la función SQL `register_payment`**: atómica, así PC y celu no repiten número.
 - **Hosting en Cloudflare Pages** (antes GitHub Pages): estático, gratis, deploy automático al pushear.
 - **Sin build ni framework**: menos piezas que mantener.
+- **2026-11-13 — Todo en Cloudflare (D1 + R2 + Pages Functions + Access), Supabase queda de respaldo.** Pedido del dueño: un solo proveedor y sin la pausa de Supabase por inactividad. Login con Cloudflare Access (código por mail, solo su email, sesión 1 mes) en vez de contraseña propia: nada de auth que mantener. `public/api.js` imita la parte de supabase-js que usaba app.js, así la app casi no cambió. OWNER_ID = el uid de Supabase, para que las rutas de archivos sigan iguales.
 
 - **Estilo visual: "estándar limpio"** (tipo Linear/Notion), elegido por el dueño entre 4 opciones. Claro/oscuro según el sistema; barra de pestañas abajo en el celu.
 - **Pagos no se borran ni editan desde la app** (los recibos son correlativos). Si hace falta anular, es una mejora pendiente.
@@ -38,7 +39,17 @@ Bitácora del proyecto. Se actualiza al cerrar cada tarea.
 
 - 2026-11-10: botón **Paneles** en la barra superior: abre juntas las URLs de `settings.quick_links` (text[], se editan en Ajustes, una por línea; si falta https:// se agrega). Por defecto Cloudflare y Supabase. Van en `settings` (no localStorage) para que sean las mismas en PC y celu. Los navegadores (Edge incluido) bloquean todas menos la primera si el sitio no tiene permitidas las emergentes, y en la app instalada ni se ve el ícono de bloqueo: las bloqueadas aparecen en un cuadro con un link cada una y cómo permitir emergentes. Migración `006`.
 
+## Migración a Cloudflare (2026-11-13)
+- Producción: D1 `administrador-proyectos`, R2 `administrador-proyectos`. Previews (otras ramas): `administrador-proyectos-prueba`.
+- Access: equipo `wandering-sunset-7da3`; una app para `administrador-proyectos.pages.dev` y otra para `*.administrador-proyectos.pages.dev`, cada una con su AUD en `wrangler.toml`. `OWNER_EMAIL` es secret en ambos entornos.
+- Datos migrados con el respaldo del 2026-11-12 (6 proyectos, 1 pago, 4 tareas, 2 suscripciones, recibo R-0001 y logo); verificado con `scripts/importar-respaldo.mjs`. El dueño confirmó que no cargó nada después.
+- El recibo R-0001 pesa 16,8 MB porque el logo iba sin comprimir; desde ahora el logo se achica a 600 px y se comprime en el PDF.
+- Supabase (`bzfmtrawqzqgsyfrxwjy`) sigue intacto como respaldo; borrarlo es decisión del dueño cuando use la versión nueva un tiempo. `supabase/` queda como referencia.
+- Las migraciones viejas (002–006) eran de Supabase; las nuevas van en `d1/migrations/`.
+
 ## Pendiente del dueño (manual)
+- Reinstalar la app en el celu y la PC (misma dirección, pero ahora pide código de Access).
+- Si en los Paneles quedó el link de Supabase, sacarlo o dejarlo según si lo sigue usando.
 - Migración 006 aplicada y verificada (2026-11-10); botón Paneles publicado.
 - Migración 005 aplicada y verificada (2026-11-10); tareas y suscripciones publicadas.
 - Migraciones 003 y 004 aplicadas y verificadas (2026-11-09); todo publicado (commit 65f82fd). La 002 no se puede verificar con la clave anónima: si guardar un tipo nuevo falla, correrla.
@@ -47,4 +58,4 @@ Bitácora del proyecto. Se actualiza al cerrar cada tarea.
 - Primer login real, completar Ajustes, cargar proyectos, probar un pago y "Compartir" en el celu.
 
 ## Problemas conocidos
-- Supabase gratis pausa tras 7 días sin uso (se restaura a mano).
+- La sesión de Access vence cada mes: pide de nuevo el código por mail.
